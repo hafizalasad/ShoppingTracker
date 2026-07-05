@@ -3,6 +3,10 @@ package com.example.ui.viewmodel
 import android.app.Application
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.api.Content
@@ -26,6 +30,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.util.Calendar
 import java.util.Locale
 
@@ -79,6 +84,21 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     init {
         val database = ExpenseDatabase.getDatabase(application)
         repository = ExpenseRepository(database.expenseDao())
+
+        // Register default network callback for auto-syncing when online
+        try {
+            val connectivityManager = application.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            connectivityManager?.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    syncPendingExpenses()
+                }
+            })
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Initial sync check on launch
+        syncPendingExpenses()
     }
 
     // Screen navigation state
@@ -208,13 +228,23 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     fun onScanIntent(intent: ScanUiIntent) {
         when (intent) {
             is ScanUiIntent.SelectImage -> {
-                _scanUiState.update { it.copy(imagePath = intent.path) }
-                analyzeReceipt(intent.bitmap) { shop, amt ->
-                    _scanUiState.update {
-                        it.copy(
-                            shopName = shop ?: "Unknown Shop",
-                            amount = if (amt != null) String.format(Locale.US, "%.2f", amt) else "0.00"
-                        )
+                val isOnline = isNetworkAvailable()
+                _scanUiState.update { 
+                    it.copy(
+                        imagePath = intent.path,
+                        isOffline = !isOnline,
+                        shopName = if (!isOnline) "Offline Receipt (Pending)" else "",
+                        amount = if (!isOnline) "0.00" else ""
+                    ) 
+                }
+                if (isOnline) {
+                    analyzeReceipt(intent.bitmap) { shop, amt ->
+                        _scanUiState.update {
+                            it.copy(
+                                shopName = shop ?: "Unknown Shop",
+                                amount = if (amt != null) String.format(Locale.US, "%.2f", amt) else "0.00"
+                            )
+                        }
                     }
                 }
             }
@@ -234,10 +264,11 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 val state = _scanUiState.value
                 val amountVal = state.amount.toDoubleOrNull() ?: 0.0
                 saveExpense(
-                    shopName = state.shopName.ifBlank { "Unknown Shop" },
+                    shopName = state.shopName.ifBlank { if (state.isOffline) "Offline Receipt (Pending)" else "Unknown Shop" },
                     amount = amountVal,
                     date = state.selectedDate,
-                    imagePath = state.imagePath
+                    imagePath = state.imagePath,
+                    isPendingAnalysis = state.isOffline
                 )
                 // Clear state upon saving
                 _scanUiState.value = ScanUiState()
@@ -328,17 +359,111 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // Save expense to database
-    fun saveExpense(shopName: String, amount: Double, date: Long, imagePath: String?) {
+    fun saveExpense(shopName: String, amount: Double, date: Long, imagePath: String?, isPendingAnalysis: Boolean = false) {
         viewModelScope.launch {
             repository.insertExpense(
                 Expense(
                     shopName = shopName,
                     amount = amount,
                     date = date,
-                    imagePath = imagePath
+                    imagePath = imagePath,
+                    isPendingAnalysis = isPendingAnalysis
                 )
             )
             _currentScreen.value = Screen.Main
+            if (isPendingAnalysis) {
+                // Try initial sync immediately if user got connected right after saving
+                syncPendingExpenses()
+            }
+        }
+    }
+
+    fun isNetworkAvailable(): Boolean {
+        val connectivityManager = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val activeNetwork = connectivityManager?.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    fun syncPendingExpenses() {
+        if (_isSyncing.value) return
+        if (!isNetworkAvailable()) return
+
+        viewModelScope.launch {
+            _isSyncing.value = true
+            try {
+                val pending = repository.getPendingExpenses()
+                for (expense in pending) {
+                    val path = expense.imagePath
+                    if (path != null) {
+                        val file = File(path)
+                        if (file.exists()) {
+                            val bitmap = BitmapFactory.decodeFile(path)
+                            if (bitmap != null) {
+                                val result = analyzeReceiptBackground(bitmap)
+                                if (result != null) {
+                                    repository.insertExpense(
+                                        expense.copy(
+                                            shopName = result.shopName,
+                                            amount = result.amount,
+                                            isPendingAnalysis = false
+                                        )
+                                    )
+                                }
+                            } else {
+                                repository.insertExpense(expense.copy(isPendingAnalysis = false))
+                            }
+                        } else {
+                            repository.insertExpense(expense.copy(isPendingAnalysis = false))
+                        }
+                    } else {
+                        repository.insertExpense(expense.copy(isPendingAnalysis = false))
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                _isSyncing.value = false
+            }
+        }
+    }
+
+    private suspend fun analyzeReceiptBackground(bitmap: Bitmap): com.example.api.ReceiptAnalysisResult? {
+        return try {
+            val base64Image = bitmap.toBase64()
+            val prompt = "Extract the shop name and total spent amount from this receipt image. Your response must be a JSON object with keys 'shopName' (String, name of the shop) and 'amount' (Number, total spent amount. If not found, use 0.0)."
+            
+            val request = GenerateContentRequest(
+                contents = listOf(
+                    Content(
+                        parts = listOf(
+                            Part(text = prompt),
+                            Part(inlineData = InlineData(mimeType = "image/jpeg", data = base64Image))
+                        )
+                    )
+                ),
+                generationConfig = GenerationConfig(
+                    responseMimeType = "application/json",
+                    temperature = 0.1
+                )
+            )
+            val apiKey = com.example.BuildConfig.GEMINI_API_KEY
+            if (apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()) {
+                return null
+            }
+            val response = GeminiApiClient.service.generateContent(apiKey, request)
+            val jsonText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            if (jsonText != null) {
+                GeminiApiClient.parseAnalysisResult(jsonText)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
         }
     }
 

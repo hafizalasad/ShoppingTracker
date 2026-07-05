@@ -35,7 +35,8 @@ data class ScanUiState(
     val shopName: String = "",
     val amount: String = "",
     val selectedDate: Long = System.currentTimeMillis(),
-    val showDatePicker: Boolean = false
+    val showDatePicker: Boolean = false,
+    val isOffline: Boolean = false
 )
 
 sealed interface ScanUiIntent {

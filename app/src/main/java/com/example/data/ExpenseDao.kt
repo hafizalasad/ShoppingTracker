@@ -19,4 +19,7 @@ interface ExpenseDao {
 
     @Query("DELETE FROM expenses WHERE id = :id")
     suspend fun deleteExpenseById(id: Long)
+
+    @Query("SELECT * FROM expenses WHERE isPendingAnalysis = 1")
+    suspend fun getPendingExpenses(): List<Expense>
 }

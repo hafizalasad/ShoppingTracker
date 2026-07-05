@@ -317,6 +317,35 @@ fun ScanReceiptScreen(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
+                    // Notice if offline
+                    AnimatedVisibility(visible = state.isOffline) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudUpload,
+                                    contentDescription = "Offline mode",
+                                    tint = MaterialTheme.colorScheme.tertiary
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "You are currently offline. We saved your receipt locally! Gemini AI will automatically process this in the background once you're online.",
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+
                     // Warning if there was an error analyzing
                     AnimatedVisibility(visible = state.analysisError != null) {
                         Card(

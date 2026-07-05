@@ -9,5 +9,6 @@ data class Expense(
     val shopName: String,
     val amount: Double,
     val date: Long, // timestamp
-    val imagePath: String? = null
+    val imagePath: String? = null,
+    val isPendingAnalysis: Boolean = false
 )
