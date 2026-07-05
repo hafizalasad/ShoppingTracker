@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ImageNotSupported
@@ -77,6 +78,18 @@ fun ShopDetailsScreen(
         val expenseToEdit = editingExpense!!
         var editShopName by remember(expenseToEdit) { mutableStateOf(expenseToEdit.shopName) }
         var editAmount by remember(expenseToEdit) { mutableStateOf(expenseToEdit.amount.toString()) }
+        var editDate by remember(expenseToEdit) { mutableStateOf(expenseToEdit.date) }
+        var showDatePicker by remember { mutableStateOf(false) }
+
+        if (showDatePicker) {
+            SingleDatePickerDialog(
+                initialDate = editDate,
+                onDismiss = { showDatePicker = false },
+                onDateSelected = { date ->
+                    editDate = date
+                }
+            )
+        }
 
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { editingExpense = null },
@@ -112,6 +125,26 @@ fun ShopDetailsScreen(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().testTag("edit_dialog_amount")
                     )
+
+                    OutlinedTextField(
+                        value = formatDate(editDate),
+                        onValueChange = {},
+                        label = { Text("Date of Purchase") },
+                        leadingIcon = {
+                            IconButton(onClick = { showDatePicker = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.CalendarMonth,
+                                    contentDescription = "Select Date"
+                                )
+                            }
+                        },
+                        readOnly = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showDatePicker = true }
+                            .testTag("edit_dialog_date"),
+                        shape = RoundedCornerShape(12.dp)
+                    )
                 }
             },
             confirmButton = {
@@ -120,7 +153,8 @@ fun ShopDetailsScreen(
                         val amountVal = editAmount.toDoubleOrNull() ?: expenseToEdit.amount
                         val updatedExpense = expenseToEdit.copy(
                             shopName = editShopName.ifBlank { expenseToEdit.shopName },
-                            amount = amountVal
+                            amount = amountVal,
+                            date = editDate
                         )
                         viewModel.onShopDetailsIntent(ShopDetailsUiIntent.UpdateExpense(updatedExpense))
                         editingExpense = null

@@ -54,7 +54,8 @@ data class Candidate(
 @JsonClass(generateAdapter = true)
 data class ReceiptAnalysisResult(
     val shopName: String,
-    val amount: Double
+    val amount: Double,
+    val date: String? = null
 )
 
 interface GeminiApiService {

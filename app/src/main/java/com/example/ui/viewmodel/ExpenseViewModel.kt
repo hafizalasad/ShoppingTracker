@@ -269,11 +269,12 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                     ) 
                 }
                 if (isOnline) {
-                    analyzeReceipt(intent.bitmap) { shop, amt ->
+                    analyzeReceipt(intent.bitmap) { shop, amt, parsedDateLong ->
                         _scanUiState.update {
                             it.copy(
                                 shopName = shop ?: "Unknown Shop",
-                                amount = if (amt != null) String.format(Locale.US, "%.2f", amt) else "0.00"
+                                amount = if (amt != null) String.format(Locale.US, "%.2f", amt) else "0.00",
+                                selectedDate = parsedDateLong ?: it.selectedDate
                             )
                         }
                     }
@@ -341,13 +342,13 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun analyzeReceipt(bitmap: Bitmap, onResult: (String?, Double?) -> Unit) {
+    fun analyzeReceipt(bitmap: Bitmap, onResult: (String?, Double?, Long?) -> Unit) {
         viewModelScope.launch {
             _isAnalyzing.value = true
             _analysisError.value = null
             try {
                 val base64Image = bitmap.toBase64()
-                val prompt = "Extract the shop name and total spent amount from this receipt image. Your response must be a JSON object with keys 'shopName' (String, name of the shop) and 'amount' (Number, total spent amount. If not found, use 0.0)."
+                val prompt = "Extract the shop name, total spent amount, and receipt issue date from this receipt image. Your response must be a JSON object with keys 'shopName' (String, name of the shop), 'amount' (Number, total spent amount. If not found, use 0.0), and 'date' (String, in format YYYY-MM-DD representing the receipt date issued, or null if not found)."
                 
                 val request = GenerateContentRequest(
                     contents = listOf(
@@ -374,18 +375,18 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 if (jsonText != null) {
                     val parsed = GeminiApiClient.parseAnalysisResult(jsonText)
                     if (parsed != null) {
-                        onResult(parsed.shopName, parsed.amount)
+                        val parsedDateMillis = parseDateToMillis(parsed.date)
+                        onResult(parsed.shopName, parsed.amount, parsedDateMillis)
                     } else {
-                        // Fallback parsing in case schema parsing fails
-                        onResult(null, null)
+                        onResult(null, null, null)
                     }
                 } else {
-                    onResult(null, null)
+                    onResult(null, null, null)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 _analysisError.value = e.message ?: "An unknown error occurred"
-                onResult(null, null)
+                onResult(null, null, null)
             } finally {
                 _isAnalyzing.value = false
             }
@@ -442,10 +443,12 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                             if (bitmap != null) {
                                 val result = analyzeReceiptBackground(bitmap)
                                 if (result != null) {
+                                    val parsedDate = parseDateToMillis(result.date) ?: expense.date
                                     repository.insertExpense(
                                         expense.copy(
                                             shopName = result.shopName,
                                             amount = result.amount,
+                                            date = parsedDate,
                                             isPendingAnalysis = false
                                         )
                                     )
@@ -471,7 +474,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private suspend fun analyzeReceiptBackground(bitmap: Bitmap): com.example.api.ReceiptAnalysisResult? {
         return try {
             val base64Image = bitmap.toBase64()
-            val prompt = "Extract the shop name and total spent amount from this receipt image. Your response must be a JSON object with keys 'shopName' (String, name of the shop) and 'amount' (Number, total spent amount. If not found, use 0.0)."
+            val prompt = "Extract the shop name, total spent amount, and receipt issue date from this receipt image. Your response must be a JSON object with keys 'shopName' (String, name of the shop), 'amount' (Number, total spent amount. If not found, use 0.0), and 'date' (String, in format YYYY-MM-DD representing the receipt date issued, or null if not found)."
             
             val request = GenerateContentRequest(
                 contents = listOf(
@@ -524,6 +527,16 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)
         return calendar.timeInMillis
+    }
+
+    private fun parseDateToMillis(dateStr: String?): Long? {
+        if (dateStr.isNullOrBlank()) return null
+        return try {
+            val sdf = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            sdf.parse(dateStr.trim())?.time
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun Bitmap.toBase64(): String {

@@ -293,12 +293,39 @@ fun ScanReceiptScreen(
                             .clip(RoundedCornerShape(16.dp)),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
-                        AsyncImage(
-                            model = File(state.imagePath!!),
-                            contentDescription = "Scanned Receipt preview",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clickable {
+                                    viewModel.navigateTo(Screen.ZoomImage(state.imagePath!!, Screen.ScanReceipt))
+                                }
+                                .testTag("scan_preview_zoom"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AsyncImage(
+                                model = File(state.imagePath!!),
+                                contentDescription = "Scanned Receipt preview",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.BottomEnd
+                            ) {
+                                Text(
+                                    "Tap to zoom",
+                                    color = androidx.compose.ui.graphics.Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier
+                                        .padding(8.dp)
+                                        .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
