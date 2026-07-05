@@ -81,6 +81,9 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         return String.format(java.util.Locale.getDefault(), "%s%.2f", getCurrencySymbol(), amount)
     }
 
+    private val _isSyncing = MutableStateFlow(false)
+    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
     init {
         val database = ExpenseDatabase.getDatabase(application)
         repository = ExpenseRepository(database.expenseDao())
@@ -379,14 +382,17 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun isNetworkAvailable(): Boolean {
-        val connectivityManager = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        val activeNetwork = connectivityManager?.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        return try {
+            val connectivityManager = getApplication<Application>().getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            val activeNetwork = connectivityManager?.activeNetwork ?: return false
+            val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // Default to true when exception occurs so that we can still attempt background work if network exists but capability query fails
+            true
+        }
     }
-
-    private val _isSyncing = MutableStateFlow(false)
-    val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
     fun syncPendingExpenses() {
         if (_isSyncing.value) return
