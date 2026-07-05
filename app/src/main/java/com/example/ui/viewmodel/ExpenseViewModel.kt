@@ -48,7 +48,7 @@ data class ShopExpenseSummary(
 )
 
 class ExpenseViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository: ExpenseRepository
+    private val repository: ExpenseRepository = ExpenseRepository(ExpenseDatabase.getDatabase(application).expenseDao())
     private val sharedPrefs = application.getSharedPreferences("expense_tracker_prefs", Context.MODE_PRIVATE)
 
     // Supported Currencies
@@ -84,9 +84,61 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
+    // AI Analysis states
+    private val _isAnalyzing = MutableStateFlow(false)
+    val isAnalyzing: StateFlow<Boolean> = _isAnalyzing.asStateFlow()
+
+    private val _analysisError = MutableStateFlow<String?>(null)
+    val analysisError: StateFlow<String?> = _analysisError.asStateFlow()
+
+    private fun loadScanDraft(): ScanUiState {
+        val prefs = getApplication<Application>().getSharedPreferences("shop_expense_prefs", Context.MODE_PRIVATE)
+        val imagePath = prefs.getString("draft_image_path", null)
+        val shopName = prefs.getString("draft_shop_name", "") ?: ""
+        val amount = prefs.getString("draft_amount", "") ?: ""
+        val selectedDate = prefs.getLong("draft_selected_date", System.currentTimeMillis())
+        val isOffline = prefs.getBoolean("draft_is_offline", false)
+        return ScanUiState(
+            imagePath = imagePath,
+            shopName = shopName,
+            amount = amount,
+            selectedDate = selectedDate,
+            isOffline = isOffline
+        )
+    }
+
+    // Unified MVI State and Intent processor for Scan Screen
+    private val _scanUiState = MutableStateFlow(loadScanDraft())
+    val scanUiState: StateFlow<ScanUiState> = combine(
+        _scanUiState,
+        _isAnalyzing,
+        _analysisError
+    ) { state, isAnalyzing, error ->
+        state.copy(
+            isAnalyzing = isAnalyzing,
+            analysisError = error
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = loadScanDraft()
+    )
+
     init {
-        val database = ExpenseDatabase.getDatabase(application)
-        repository = ExpenseRepository(database.expenseDao())
+        // Collect scan state and save to draft SharedPreferences reactively
+        viewModelScope.launch {
+            _scanUiState.collect { state ->
+                val prefs = application.getSharedPreferences("shop_expense_prefs", Context.MODE_PRIVATE)
+                prefs.edit().apply {
+                    putString("draft_image_path", state.imagePath)
+                    putString("draft_shop_name", state.shopName)
+                    putString("draft_amount", state.amount)
+                    putLong("draft_selected_date", state.selectedDate)
+                    putBoolean("draft_is_offline", state.isOffline)
+                    apply()
+                }
+            }
+        }
 
         // Register default network callback for auto-syncing when online
         try {
@@ -204,30 +256,6 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // AI Analysis states
-    private val _isAnalyzing = MutableStateFlow(false)
-    val isAnalyzing: StateFlow<Boolean> = _isAnalyzing.asStateFlow()
-
-    private val _analysisError = MutableStateFlow<String?>(null)
-    val analysisError: StateFlow<String?> = _analysisError.asStateFlow()
-
-    // Unified MVI State and Intent processor for Scan Screen
-    private val _scanUiState = MutableStateFlow(ScanUiState())
-    val scanUiState: StateFlow<ScanUiState> = combine(
-        _scanUiState,
-        _isAnalyzing,
-        _analysisError
-    ) { state, isAnalyzing, error ->
-        state.copy(
-            isAnalyzing = isAnalyzing,
-            analysisError = error
-        )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = ScanUiState()
-    )
-
     fun onScanIntent(intent: ScanUiIntent) {
         when (intent) {
             is ScanUiIntent.SelectImage -> {
@@ -300,6 +328,9 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         when (intent) {
             is ShopDetailsUiIntent.DeleteExpense -> {
                 deleteExpense(intent.expense.id)
+            }
+            is ShopDetailsUiIntent.UpdateExpense -> {
+                updateExpense(intent.expense)
             }
             is ShopDetailsUiIntent.GoBack -> {
                 navigateTo(Screen.Main)
@@ -476,6 +507,12 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     fun deleteExpense(id: Long) {
         viewModelScope.launch {
             repository.deleteExpenseById(id)
+        }
+    }
+
+    fun updateExpense(expense: Expense) {
+        viewModelScope.launch {
+            repository.insertExpense(expense)
         }
     }
 

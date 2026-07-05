@@ -60,6 +60,7 @@ data class ShopDetailsUiState(
 
 sealed interface ShopDetailsUiIntent {
     data class DeleteExpense(val expense: Expense) : ShopDetailsUiIntent
+    data class UpdateExpense(val expense: Expense) : ShopDetailsUiIntent
     data object GoBack : ShopDetailsUiIntent
     data class ZoomImage(val imagePath: String, val shopName: String) : ShopDetailsUiIntent
 }

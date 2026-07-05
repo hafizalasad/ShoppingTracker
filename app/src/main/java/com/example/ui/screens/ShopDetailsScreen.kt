@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ImageNotSupported
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -28,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -35,7 +37,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -65,6 +69,75 @@ fun ShopDetailsScreen(
 
     BackHandler(enabled = true) {
         viewModel.onShopDetailsIntent(ShopDetailsUiIntent.GoBack)
+    }
+
+    var editingExpense by remember { mutableStateOf<Expense?>(null) }
+
+    if (editingExpense != null) {
+        val expenseToEdit = editingExpense!!
+        var editShopName by remember(expenseToEdit) { mutableStateOf(expenseToEdit.shopName) }
+        var editAmount by remember(expenseToEdit) { mutableStateOf(expenseToEdit.amount.toString()) }
+
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { editingExpense = null },
+            title = {
+                Text(
+                    text = "Edit Transaction",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    OutlinedTextField(
+                        value = editShopName,
+                        onValueChange = { editShopName = it },
+                        label = { Text("Shop Name") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("edit_dialog_shop_name")
+                    )
+
+                    OutlinedTextField(
+                        value = editAmount,
+                        onValueChange = { editAmount = it },
+                        label = { Text("Spent Amount (${viewModel.getCurrencySymbol()})") },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
+                        ),
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("edit_dialog_amount")
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.Button(
+                    onClick = {
+                        val amountVal = editAmount.toDoubleOrNull() ?: expenseToEdit.amount
+                        val updatedExpense = expenseToEdit.copy(
+                            shopName = editShopName.ifBlank { expenseToEdit.shopName },
+                            amount = amountVal
+                        )
+                        viewModel.onShopDetailsIntent(ShopDetailsUiIntent.UpdateExpense(updatedExpense))
+                        editingExpense = null
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Save", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { editingExpense = null }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -114,6 +187,9 @@ fun ShopDetailsScreen(
                         onImageClick = { path ->
                             viewModel.onShopDetailsIntent(ShopDetailsUiIntent.ZoomImage(path, shopName))
                         },
+                        onEditClick = {
+                            editingExpense = expense
+                        },
                         onDeleteClick = {
                             viewModel.onShopDetailsIntent(ShopDetailsUiIntent.DeleteExpense(expense))
                         }
@@ -129,6 +205,7 @@ fun ExpenseDetailCard(
     expense: Expense,
     formattedAmount: String,
     onImageClick: (String) -> Unit,
+    onEditClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
     Card(
@@ -164,17 +241,31 @@ fun ExpenseDetailCard(
                     )
                 }
 
-                IconButton(
-                    onClick = onDeleteClick,
-                    colors = IconButtonDefaults.iconButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error
-                    ),
-                    modifier = Modifier.testTag("delete_expense_${expense.id}")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete Expense"
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onEditClick,
+                        colors = IconButtonDefaults.iconButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.testTag("edit_expense_${expense.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit Expense"
+                        )
+                    }
+                    IconButton(
+                        onClick = onDeleteClick,
+                        colors = IconButtonDefaults.iconButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        ),
+                        modifier = Modifier.testTag("delete_expense_${expense.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete Expense"
+                        )
+                    }
                 }
             }
 
