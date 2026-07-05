@@ -4,6 +4,7 @@ import android.net.Uri
 import android.view.LayoutInflater
 import android.widget.ImageButton
 import android.widget.ImageView
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +35,10 @@ fun ZoomImageScreen(
 
     val liveImagePath by zoomViewModel.imagePath.collectAsState()
     val liveReturnScreen by zoomViewModel.returnScreen.collectAsState()
+
+    BackHandler(enabled = true) {
+        viewModel.navigateTo(liveReturnScreen)
+    }
 
     AndroidView(
         factory = { context ->

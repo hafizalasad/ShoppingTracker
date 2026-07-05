@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -85,6 +86,10 @@ fun ScanReceiptScreen(
     val context = LocalContext.current
     // Collect single unified MVI UI State (MVI Rule #1)
     val state by viewModel.scanUiState.collectAsState()
+
+    BackHandler(enabled = true) {
+        viewModel.navigateTo(Screen.Main)
+    }
 
     // Setup temp file for camera capture
     val tempFile = remember { File(context.cacheDir, "temp_camera_receipt.jpg") }

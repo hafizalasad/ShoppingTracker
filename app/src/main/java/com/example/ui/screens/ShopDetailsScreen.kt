@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -61,6 +62,10 @@ fun ShopDetailsScreen(
     // Collect the dynamic MVI State Flow specifically matching the shop
     val stateFlow = remember(shopName) { viewModel.getShopDetailsUiState(shopName) }
     val state by stateFlow.collectAsState()
+
+    BackHandler(enabled = true) {
+        viewModel.onShopDetailsIntent(ShopDetailsUiIntent.GoBack)
+    }
 
     Scaffold(
         topBar = {
