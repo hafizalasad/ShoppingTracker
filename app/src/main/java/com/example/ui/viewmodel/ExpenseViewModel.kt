@@ -78,7 +78,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun formatAmount(amount: Double): String {
-        return String.format(java.util.Locale.getDefault(), "%s%.2f", getCurrencySymbol(), amount)
+        return com.example.util.CurrencyUtils.formatBangladeshiStyle(getCurrencySymbol(), amount)
     }
 
     private val _isSyncing = MutableStateFlow(false)

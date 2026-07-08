@@ -151,7 +151,7 @@ fun ShopPieChart(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = String.format(Locale.getDefault(), "%s%.2f", currencySymbol, totalSpent),
+                        text = com.example.util.CurrencyUtils.formatBangladeshiStyle(currencySymbol, totalSpent),
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Black,
                         color = MaterialTheme.colorScheme.primary
@@ -203,7 +203,7 @@ fun ShopPieChart(
                                 modifier = Modifier.padding(end = 12.dp)
                             )
                             Text(
-                                text = String.format(Locale.getDefault(), "%s%.2f", currencySymbol, summary.totalAmount),
+                                text = com.example.util.CurrencyUtils.formatBangladeshiStyle(currencySymbol, summary.totalAmount),
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -310,7 +310,7 @@ fun DayWiseBarChart(
                         ) {
                             // Spent Amount text above the bar
                             Text(
-                                text = String.format(Locale.getDefault(), "%s%.0f", currencySymbol, group.totalAmount),
+                                text = com.example.util.CurrencyUtils.formatBangladeshiStyle(currencySymbol, group.totalAmount, includeDecimals = false),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
