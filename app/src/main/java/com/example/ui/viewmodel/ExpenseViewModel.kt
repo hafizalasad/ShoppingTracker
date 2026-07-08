@@ -91,6 +91,13 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private val _analysisError = MutableStateFlow<String?>(null)
     val analysisError: StateFlow<String?> = _analysisError.asStateFlow()
 
+    // Manual scanning states for already saved receipts
+    private val _manualScanningIds = MutableStateFlow<Set<Long>>(emptySet())
+    val manualScanningIds: StateFlow<Set<Long>> = _manualScanningIds.asStateFlow()
+
+    private val _manualScanningErrors = MutableStateFlow<Map<Long, String>>(emptyMap())
+    val manualScanningErrors: StateFlow<Map<Long, String>> = _manualScanningErrors.asStateFlow()
+
     private fun loadScanDraft(): ScanUiState {
         val prefs = getApplication<Application>().getSharedPreferences("shop_expense_prefs", Context.MODE_PRIVATE)
         val imagePath = prefs.getString("draft_image_path", null)
@@ -339,6 +346,9 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             is ShopDetailsUiIntent.ZoomImage -> {
                 navigateTo(Screen.ZoomImage(intent.imagePath, Screen.ShopDetails(intent.shopName)))
             }
+            is ShopDetailsUiIntent.TriggerScan -> {
+                triggerManualReceiptScan(intent.expense)
+            }
         }
     }
 
@@ -516,6 +526,51 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     fun updateExpense(expense: Expense) {
         viewModelScope.launch {
             repository.insertExpense(expense)
+        }
+    }
+
+    fun triggerManualReceiptScan(expense: Expense) {
+        val path = expense.imagePath ?: return
+        val file = File(path)
+        if (!file.exists()) {
+            _manualScanningErrors.update { it + (expense.id to "Receipt image file not found on disk.") }
+            return
+        }
+
+        viewModelScope.launch {
+            _manualScanningIds.update { it + expense.id }
+            _manualScanningErrors.update { it - expense.id }
+
+            try {
+                if (!isNetworkAvailable()) {
+                    throw Exception("No network connection available. Please connect to internet.")
+                }
+
+                val bitmap = BitmapFactory.decodeFile(path)
+                if (bitmap == null) {
+                    throw Exception("Failed to decode receipt image file.")
+                }
+
+                val result = analyzeReceiptBackground(bitmap)
+                if (result != null) {
+                    val parsedDate = parseDateToMillis(result.date) ?: expense.date
+                    val updatedExpense = expense.copy(
+                        shopName = result.shopName.ifBlank { "Unknown Shop" },
+                        amount = result.amount,
+                        date = parsedDate,
+                        isPendingAnalysis = false
+                    )
+                    repository.insertExpense(updatedExpense)
+                } else {
+                    throw Exception("Gemini AI API returned an empty or invalid response. Please check your API key in Secrets.")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                val errorMsg = e.localizedMessage ?: e.message ?: "Unknown error occurred during AI analysis."
+                _manualScanningErrors.update { it + (expense.id to errorMsg) }
+            } finally {
+                _manualScanningIds.update { it - expense.id }
+            }
         }
     }
 

@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ImageNotSupported
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -67,6 +69,8 @@ fun ShopDetailsScreen(
     // Collect the dynamic MVI State Flow specifically matching the shop
     val stateFlow = remember(shopName) { viewModel.getShopDetailsUiState(shopName) }
     val state by stateFlow.collectAsState()
+    val scanningIds by viewModel.manualScanningIds.collectAsState()
+    val scanningErrors by viewModel.manualScanningErrors.collectAsState()
 
     BackHandler(enabled = true) {
         viewModel.onShopDetailsIntent(ShopDetailsUiIntent.GoBack)
@@ -215,9 +219,16 @@ fun ShopDetailsScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 items(state.expenses) { expense ->
+                    val isScanning = scanningIds.contains(expense.id)
+                    val scanError = scanningErrors[expense.id]
                     ExpenseDetailCard(
                         expense = expense,
                         formattedAmount = viewModel.formatAmount(expense.amount),
+                        isScanning = isScanning,
+                        scanError = scanError,
+                        onRefreshScanClick = {
+                            viewModel.onShopDetailsIntent(ShopDetailsUiIntent.TriggerScan(expense))
+                        },
                         onImageClick = { path ->
                             viewModel.onShopDetailsIntent(ShopDetailsUiIntent.ZoomImage(path, shopName))
                         },
@@ -238,6 +249,9 @@ fun ShopDetailsScreen(
 fun ExpenseDetailCard(
     expense: Expense,
     formattedAmount: String,
+    isScanning: Boolean,
+    scanError: String?,
+    onRefreshScanClick: () -> Unit,
     onImageClick: (String) -> Unit,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit
@@ -276,6 +290,33 @@ fun ExpenseDetailCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (expense.imagePath != null) {
+                        val file = File(expense.imagePath)
+                        if (file.exists()) {
+                            if (isScanning) {
+                                androidx.compose.material3.CircularProgressIndicator(
+                                    modifier = Modifier
+                                        .padding(horizontal = 8.dp)
+                                        .size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            } else {
+                                IconButton(
+                                    onClick = onRefreshScanClick,
+                                    colors = IconButtonDefaults.iconButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.tertiary
+                                    ),
+                                    modifier = Modifier.testTag("refresh_scan_${expense.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Re-scan Receipt with Gemini"
+                                    )
+                                }
+                            }
+                        }
+                    }
                     IconButton(
                         onClick = onEditClick,
                         colors = IconButtonDefaults.iconButtonColors(
@@ -311,6 +352,35 @@ fun ExpenseDetailCard(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
+
+            if (scanError != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("scan_error_card_${expense.id}")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Scan Error Icon",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "AI Scan Error: $scanError",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
 
             if (expense.isPendingAnalysis) {
                 Spacer(modifier = Modifier.height(8.dp))

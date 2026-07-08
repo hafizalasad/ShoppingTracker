@@ -63,4 +63,5 @@ sealed interface ShopDetailsUiIntent {
     data class UpdateExpense(val expense: Expense) : ShopDetailsUiIntent
     data object GoBack : ShopDetailsUiIntent
     data class ZoomImage(val imagePath: String, val shopName: String) : ShopDetailsUiIntent
+    data class TriggerScan(val expense: Expense) : ShopDetailsUiIntent
 }
