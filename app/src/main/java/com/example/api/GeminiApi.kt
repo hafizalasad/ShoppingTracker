@@ -64,6 +64,67 @@ interface GeminiApiService {
         @Query("key") apiKey: String,
         @Body request: GenerateContentRequest
     ): GenerateContentResponse
+
+    @POST
+    suspend fun generateContentDynamic(
+        @retrofit2.http.Url url: String,
+        @Body request: GenerateContentRequest
+    ): GenerateContentResponse
+}
+
+@JsonClass(generateAdapter = true)
+data class OpenAiChatRequest(
+    val model: String,
+    val messages: List<OpenAiMessage>,
+    val response_format: OpenAiResponseFormat? = null,
+    val temperature: Double? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class OpenAiMessage(
+    val role: String,
+    val content: List<OpenAiContentPart>
+)
+
+@JsonClass(generateAdapter = true)
+data class OpenAiContentPart(
+    val type: String,
+    val text: String? = null,
+    val image_url: OpenAiImageUrl? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class OpenAiImageUrl(
+    val url: String
+)
+
+@JsonClass(generateAdapter = true)
+data class OpenAiResponseFormat(
+    val type: String
+)
+
+@JsonClass(generateAdapter = true)
+data class OpenAiChatResponse(
+    val choices: List<OpenAiChoice>?
+)
+
+@JsonClass(generateAdapter = true)
+data class OpenAiChoice(
+    val message: OpenAiResponseMessage?
+)
+
+@JsonClass(generateAdapter = true)
+data class OpenAiResponseMessage(
+    val content: String?
+)
+
+interface OpenAiApiService {
+    @POST
+    suspend fun chatCompletions(
+        @retrofit2.http.Url url: String,
+        @retrofit2.http.Header("Authorization") authHeader: String,
+        @Body request: OpenAiChatRequest
+    ): OpenAiChatResponse
 }
 
 object GeminiApiClient {
@@ -86,6 +147,7 @@ object GeminiApiClient {
         .build()
 
     val service: GeminiApiService = retrofit.create(GeminiApiService::class.java)
+    val openAiService: OpenAiApiService = retrofit.create(OpenAiApiService::class.java)
 
     fun parseAnalysisResult(jsonString: String): ReceiptAnalysisResult? {
         return try {

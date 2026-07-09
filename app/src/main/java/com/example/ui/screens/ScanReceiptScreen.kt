@@ -58,6 +58,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -86,6 +89,13 @@ fun ScanReceiptScreen(
     val context = LocalContext.current
     // Collect single unified MVI UI State (MVI Rule #1)
     val state by viewModel.scanUiState.collectAsState()
+
+    val aiProvider by viewModel.aiProvider.collectAsState()
+    val aiModel by viewModel.aiModel.collectAsState()
+    val aiApiKey by viewModel.aiApiKey.collectAsState()
+    val aiBaseUrl by viewModel.aiBaseUrl.collectAsState()
+
+    var showSettingsDialog by remember { mutableStateOf(false) }
 
     BackHandler(enabled = true) {
         viewModel.navigateTo(Screen.Main)
@@ -145,6 +155,14 @@ fun ScanReceiptScreen(
                         )
                     }
                 },
+                actions = {
+                    IconButton(onClick = { showSettingsDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "AI Settings"
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
@@ -178,7 +196,7 @@ fun ScanReceiptScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Analyze Receipts using Gemini AI",
+                            text = if (aiProvider == "gemini") "Analyze Receipts using Gemini AI" else "Analyze Receipts using custom AI",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground,
@@ -263,7 +281,7 @@ fun ScanReceiptScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Gemini AI is scanning...",
+                            text = if (aiProvider == "gemini") "Gemini AI is scanning..." else "${aiModel.substringAfterLast("/")} is scanning...",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -508,6 +526,211 @@ fun ScanReceiptScreen(
             onDismiss = { viewModel.onScanIntent(ScanUiIntent.ToggleDatePicker(false)) },
             onDateSelected = { date ->
                 viewModel.onScanIntent(ScanUiIntent.UpdateDate(date))
+            }
+        )
+    }
+
+    if (showSettingsDialog) {
+        var tempProvider by remember { mutableStateOf(aiProvider) }
+        var tempModel by remember { mutableStateOf(aiModel) }
+        var tempApiKey by remember { mutableStateOf(aiApiKey) }
+        var tempBaseUrl by remember { mutableStateOf(aiBaseUrl) }
+
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showSettingsDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("AI Provider Settings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Configure alternative models and providers to avoid Gemini API rate limits or use free endpoints.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // Provider selection card
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                "API Provider Type",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable { tempProvider = "gemini" }
+                                ) {
+                                    androidx.compose.material3.RadioButton(
+                                        selected = tempProvider == "gemini",
+                                        onClick = { tempProvider = "gemini" }
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Gemini", style = MaterialTheme.typography.bodyMedium)
+                                }
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable { tempProvider = "openai" }
+                                ) {
+                                    androidx.compose.material3.RadioButton(
+                                        selected = tempProvider == "openai",
+                                        onClick = { tempProvider = "openai" }
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("OpenAI / Custom", style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                        }
+                    }
+
+                    // Base URL (only for OpenAI-compatible)
+                    if (tempProvider == "openai") {
+                        OutlinedTextField(
+                            value = tempBaseUrl,
+                            onValueChange = { tempBaseUrl = it },
+                            label = { Text("Base URL") },
+                            placeholder = { Text("e.g., https://openrouter.ai/api/v1/") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    // Model name field
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedTextField(
+                            value = tempModel,
+                            onValueChange = { tempModel = it },
+                            label = { Text("Model Name") },
+                            placeholder = { Text(if (tempProvider == "gemini") "e.g., gemini-1.5-flash" else "e.g., google/gemini-2.5-flash:free") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Model suggestions row
+                        Text("Suggested Models:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            if (tempProvider == "gemini") {
+                                listOf("gemini-3.5-flash", "gemini-2.5-flash", "gemini-1.5-flash").forEach { suggestedModel ->
+                                    val displayName = suggestedModel
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(MaterialTheme.colorScheme.secondaryContainer)
+                                            .clickable { tempModel = suggestedModel }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = displayName,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                                        )
+                                    }
+                                }
+                            } else {
+                                listOf(
+                                    "google/gemini-2.5-flash:free",
+                                    "meta-llama/llama-3.2-11b-vision-instruct:free",
+                                    "deepseek-chat"
+                                ).forEach { suggestedModel ->
+                                    val displayName = suggestedModel.substringAfterLast("/")
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(MaterialTheme.colorScheme.secondaryContainer)
+                                            .clickable {
+                                                tempModel = suggestedModel
+                                                if (suggestedModel.contains("deepseek")) {
+                                                    tempBaseUrl = "https://api.deepseek.com/v1/"
+                                                } else {
+                                                    tempBaseUrl = "https://openrouter.ai/api/v1/"
+                                                }
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(
+                                            text = displayName,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // API Key field
+                    OutlinedTextField(
+                        value = tempApiKey,
+                        onValueChange = { tempApiKey = it },
+                        label = { Text("API Key") },
+                        placeholder = { Text(if (tempProvider == "gemini") "Default: App Secrets key" else "Your API key") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        visualTransformation = if (tempApiKey.isBlank()) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation()
+                    )
+
+                    if (tempProvider == "openai") {
+                        Text(
+                            text = "💡 OpenRouter provides FREE models like google/gemini-2.5-flash:free. You can get an API key at openrouter.ai.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        Text(
+                            text = "💡 If left blank, the app will use the default GEMINI_API_KEY from the system secrets.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.updateAiSettings(
+                            provider = tempProvider,
+                            model = tempModel,
+                            apiKey = tempApiKey,
+                            baseUrl = tempBaseUrl
+                        )
+                        showSettingsDialog = false
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSettingsDialog = false }) {
+                    Text("Cancel")
+                }
             }
         )
     }

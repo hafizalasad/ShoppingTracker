@@ -91,6 +91,19 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private val _analysisError = MutableStateFlow<String?>(null)
     val analysisError: StateFlow<String?> = _analysisError.asStateFlow()
 
+    // AI Settings State
+    private val _aiProvider = MutableStateFlow("gemini")
+    val aiProvider: StateFlow<String> = _aiProvider.asStateFlow()
+
+    private val _aiModel = MutableStateFlow("gemini-3.5-flash")
+    val aiModel: StateFlow<String> = _aiModel.asStateFlow()
+
+    private val _aiApiKey = MutableStateFlow("")
+    val aiApiKey: StateFlow<String> = _aiApiKey.asStateFlow()
+
+    private val _aiBaseUrl = MutableStateFlow("https://openrouter.ai/api/v1/")
+    val aiBaseUrl: StateFlow<String> = _aiBaseUrl.asStateFlow()
+
     // Manual scanning states for already saved receipts
     private val _manualScanningIds = MutableStateFlow<Set<Long>>(emptySet())
     val manualScanningIds: StateFlow<Set<Long>> = _manualScanningIds.asStateFlow()
@@ -132,6 +145,12 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     )
 
     init {
+        val initPrefs = application.getSharedPreferences("shop_expense_prefs", Context.MODE_PRIVATE)
+        _aiProvider.value = initPrefs.getString("ai_provider", "gemini") ?: "gemini"
+        _aiModel.value = initPrefs.getString("ai_model", "gemini-3.5-flash") ?: "gemini-3.5-flash"
+        _aiApiKey.value = initPrefs.getString("ai_api_key", "") ?: ""
+        _aiBaseUrl.value = initPrefs.getString("ai_base_url", "https://openrouter.ai/api/v1/") ?: "https://openrouter.ai/api/v1/"
+
         // Collect scan state and save to draft SharedPreferences reactively
         viewModelScope.launch {
             _scanUiState.collect { state ->
@@ -352,50 +371,119 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun updateAiSettings(provider: String, model: String, apiKey: String, baseUrl: String) {
+        val prefs = getApplication<Application>().getSharedPreferences("shop_expense_prefs", Context.MODE_PRIVATE)
+        prefs.edit().apply {
+            putString("ai_provider", provider)
+            putString("ai_model", model)
+            putString("ai_api_key", apiKey)
+            putString("ai_base_url", baseUrl)
+            apply()
+        }
+        _aiProvider.value = provider
+        _aiModel.value = model
+        _aiApiKey.value = apiKey
+        _aiBaseUrl.value = baseUrl
+    }
+
+    private suspend fun analyzeReceiptUnified(bitmap: Bitmap): com.example.api.ReceiptAnalysisResult {
+        val provider = _aiProvider.value
+        val model = _aiModel.value
+        val customApiKey = _aiApiKey.value
+        val customBaseUrl = _aiBaseUrl.value
+
+        val base64Image = bitmap.toBase64()
+        val prompt = "Extract the shop name, total spent amount, and receipt issue date from this receipt image. Your response must be a JSON object with keys 'shopName' (String, name of the shop), 'amount' (Number, total spent amount. If not found, use 0.0), and 'date' (String, in format YYYY-MM-DD representing the receipt date issued, or null if not found)."
+
+        if (provider == "openai") {
+            if (customBaseUrl.isBlank()) {
+                throw Exception("API Base URL is not configured.")
+            }
+            if (customApiKey.isBlank()) {
+                throw Exception("API Key is not configured for OpenAI/Custom Provider.")
+            }
+
+            val formattedUrl = when {
+                customBaseUrl.endsWith("/chat/completions") -> customBaseUrl
+                customBaseUrl.endsWith("/") -> "${customBaseUrl}chat/completions"
+                else -> "$customBaseUrl/chat/completions"
+            }
+
+            val request = com.example.api.OpenAiChatRequest(
+                model = model.ifBlank { "google/gemini-2.5-flash:free" },
+                messages = listOf(
+                    com.example.api.OpenAiMessage(
+                        role = "user",
+                        content = listOf(
+                            com.example.api.OpenAiContentPart(type = "text", text = prompt),
+                            com.example.api.OpenAiContentPart(
+                                type = "image_url",
+                                image_url = com.example.api.OpenAiImageUrl(
+                                    url = "data:image/jpeg;base64,$base64Image"
+                                )
+                            )
+                        )
+                    )
+                ),
+                response_format = com.example.api.OpenAiResponseFormat(type = "json_object"),
+                temperature = 0.1
+            )
+
+            val authHeader = "Bearer $customApiKey"
+            val response = com.example.api.GeminiApiClient.openAiService.chatCompletions(formattedUrl, authHeader, request)
+            val jsonText = response.choices?.firstOrNull()?.message?.content
+            if (jsonText != null) {
+                return com.example.api.GeminiApiClient.parseAnalysisResult(jsonText)
+                    ?: throw Exception("Failed to parse API response schema. Response text: $jsonText")
+            } else {
+                throw Exception("API returned an empty response. Ensure the chosen model supports vision/images.")
+            }
+        } else {
+            val finalApiKey = customApiKey.ifBlank { com.example.BuildConfig.GEMINI_API_KEY }
+            if (finalApiKey == "MY_GEMINI_API_KEY" || finalApiKey.isBlank()) {
+                throw Exception("Gemini API Key is not configured. Please add GEMINI_API_KEY to your Secrets panel in AI Studio or enter a custom key in settings.")
+            }
+
+            val finalModel = if (model.isNotBlank() && model != "gemini-3.5-flash") model else "gemini-3.5-flash"
+            val dynamicUrl = "https://generativelanguage.googleapis.com/v1beta/models/$finalModel:generateContent?key=$finalApiKey"
+
+            val request = GenerateContentRequest(
+                contents = listOf(
+                    Content(
+                        parts = listOf(
+                            Part(text = prompt),
+                            Part(inlineData = InlineData(mimeType = "image/jpeg", data = base64Image))
+                        )
+                    )
+                ),
+                generationConfig = GenerationConfig(
+                    responseMimeType = "application/json",
+                    temperature = 0.1
+                )
+            )
+
+            val response = GeminiApiClient.service.generateContentDynamic(dynamicUrl, request)
+            val jsonText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            if (jsonText != null) {
+                return GeminiApiClient.parseAnalysisResult(jsonText)
+                    ?: throw Exception("Failed to parse Gemini AI API response schema.")
+            } else {
+                throw Exception("Gemini AI API returned an empty response.")
+            }
+        }
+    }
+
     fun analyzeReceipt(bitmap: Bitmap, onResult: (String?, Double?, Long?) -> Unit) {
         viewModelScope.launch {
             _isAnalyzing.value = true
             _analysisError.value = null
             try {
-                val base64Image = bitmap.toBase64()
-                val prompt = "Extract the shop name, total spent amount, and receipt issue date from this receipt image. Your response must be a JSON object with keys 'shopName' (String, name of the shop), 'amount' (Number, total spent amount. If not found, use 0.0), and 'date' (String, in format YYYY-MM-DD representing the receipt date issued, or null if not found)."
-                
-                val request = GenerateContentRequest(
-                    contents = listOf(
-                        Content(
-                            parts = listOf(
-                                Part(text = prompt),
-                                Part(inlineData = InlineData(mimeType = "image/jpeg", data = base64Image))
-                            )
-                        )
-                    ),
-                    generationConfig = GenerationConfig(
-                        responseMimeType = "application/json",
-                        temperature = 0.1
-                    )
-                )
-                
-                val apiKey = com.example.BuildConfig.GEMINI_API_KEY
-                if (apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()) {
-                    throw Exception("API Key is not configured. Please add GEMINI_API_KEY to your Secrets panel in AI Studio.")
-                }
-                
-                val response = GeminiApiClient.service.generateContent(apiKey, request)
-                val jsonText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                if (jsonText != null) {
-                    val parsed = GeminiApiClient.parseAnalysisResult(jsonText)
-                    if (parsed != null) {
-                        val parsedDateMillis = parseDateToMillis(parsed.date)
-                        onResult(parsed.shopName, parsed.amount, parsedDateMillis)
-                    } else {
-                        onResult(null, null, null)
-                    }
-                } else {
-                    onResult(null, null, null)
-                }
+                val parsed = analyzeReceiptUnified(bitmap)
+                val parsedDateMillis = parseDateToMillis(parsed.date)
+                onResult(parsed.shopName, parsed.amount, parsedDateMillis)
             } catch (e: Exception) {
                 e.printStackTrace()
-                _analysisError.value = e.message ?: "An unknown error occurred"
+                _analysisError.value = getErrorMessage(e)
                 onResult(null, null, null)
             } finally {
                 _isAnalyzing.value = false
@@ -445,14 +533,14 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val pending = repository.getPendingExpenses()
                 for (expense in pending) {
-                    val path = expense.imagePath
-                    if (path != null) {
-                        val file = File(path)
-                        if (file.exists()) {
-                            val bitmap = BitmapFactory.decodeFile(path)
-                            if (bitmap != null) {
-                                val result = analyzeReceiptBackground(bitmap)
-                                if (result != null) {
+                    try {
+                        val path = expense.imagePath
+                        if (path != null) {
+                            val file = File(path)
+                            if (file.exists()) {
+                                val bitmap = BitmapFactory.decodeFile(path)
+                                if (bitmap != null) {
+                                    val result = analyzeReceiptBackground(bitmap)
                                     val parsedDate = parseDateToMillis(result.date) ?: expense.date
                                     repository.insertExpense(
                                         expense.copy(
@@ -462,6 +550,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                                             isPendingAnalysis = false
                                         )
                                     )
+                                } else {
+                                    repository.insertExpense(expense.copy(isPendingAnalysis = false))
                                 }
                             } else {
                                 repository.insertExpense(expense.copy(isPendingAnalysis = false))
@@ -469,8 +559,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                         } else {
                             repository.insertExpense(expense.copy(isPendingAnalysis = false))
                         }
-                    } else {
-                        repository.insertExpense(expense.copy(isPendingAnalysis = false))
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
                 }
             } catch (e: Exception) {
@@ -481,40 +571,33 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private suspend fun analyzeReceiptBackground(bitmap: Bitmap): com.example.api.ReceiptAnalysisResult? {
-        return try {
-            val base64Image = bitmap.toBase64()
-            val prompt = "Extract the shop name, total spent amount, and receipt issue date from this receipt image. Your response must be a JSON object with keys 'shopName' (String, name of the shop), 'amount' (Number, total spent amount. If not found, use 0.0), and 'date' (String, in format YYYY-MM-DD representing the receipt date issued, or null if not found)."
-            
-            val request = GenerateContentRequest(
-                contents = listOf(
-                    Content(
-                        parts = listOf(
-                            Part(text = prompt),
-                            Part(inlineData = InlineData(mimeType = "image/jpeg", data = base64Image))
-                        )
-                    )
-                ),
-                generationConfig = GenerationConfig(
-                    responseMimeType = "application/json",
-                    temperature = 0.1
-                )
-            )
-            val apiKey = com.example.BuildConfig.GEMINI_API_KEY
-            if (apiKey == "MY_GEMINI_API_KEY" || apiKey.isBlank()) {
-                return null
-            }
-            val response = GeminiApiClient.service.generateContent(apiKey, request)
-            val jsonText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-            if (jsonText != null) {
-                GeminiApiClient.parseAnalysisResult(jsonText)
-            } else {
+    private suspend fun analyzeReceiptBackground(bitmap: Bitmap): com.example.api.ReceiptAnalysisResult {
+        return analyzeReceiptUnified(bitmap)
+    }
+
+    internal fun getErrorMessage(e: Throwable): String {
+        if (e is retrofit2.HttpException) {
+            val errorBodyStr = try {
+                e.response()?.errorBody()?.string()
+            } catch (ex: Exception) {
                 null
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
+            if (!errorBodyStr.isNullOrBlank()) {
+                try {
+                    val json = org.json.JSONObject(errorBodyStr)
+                    if (json.has("error")) {
+                        val errorObj = json.getJSONObject("error")
+                        if (errorObj.has("message")) {
+                            return errorObj.getString("message")
+                        }
+                    }
+                } catch (ex: Exception) {
+                    // Ignore and fall back to general HTTP status
+                }
+            }
+            return "HTTP ${e.code()}: ${e.message()}"
         }
+        return e.localizedMessage ?: e.message ?: "Unknown error occurred during AI analysis."
     }
 
     fun deleteExpense(id: Long) {
@@ -552,21 +635,17 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 }
 
                 val result = analyzeReceiptBackground(bitmap)
-                if (result != null) {
-                    val parsedDate = parseDateToMillis(result.date) ?: expense.date
-                    val updatedExpense = expense.copy(
-                        shopName = result.shopName.ifBlank { "Unknown Shop" },
-                        amount = result.amount,
-                        date = parsedDate,
-                        isPendingAnalysis = false
-                    )
-                    repository.insertExpense(updatedExpense)
-                } else {
-                    throw Exception("Gemini AI API returned an empty or invalid response. Please check your API key in Secrets.")
-                }
+                val parsedDate = parseDateToMillis(result.date) ?: expense.date
+                val updatedExpense = expense.copy(
+                    shopName = result.shopName.ifBlank { "Unknown Shop" },
+                    amount = result.amount,
+                    date = parsedDate,
+                    isPendingAnalysis = false
+                )
+                repository.insertExpense(updatedExpense)
             } catch (e: Exception) {
                 e.printStackTrace()
-                val errorMsg = e.localizedMessage ?: e.message ?: "Unknown error occurred during AI analysis."
+                val errorMsg = getErrorMessage(e)
                 _manualScanningErrors.update { it + (expense.id to errorMsg) }
             } finally {
                 _manualScanningIds.update { it - expense.id }
