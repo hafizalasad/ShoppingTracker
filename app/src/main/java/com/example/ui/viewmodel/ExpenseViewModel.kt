@@ -95,6 +95,31 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private val _aiProvider = MutableStateFlow("gemini")
     val aiProvider: StateFlow<String> = _aiProvider.asStateFlow()
 
+    private val _geminiApiKey = MutableStateFlow("")
+    val geminiApiKey: StateFlow<String> = _geminiApiKey.asStateFlow()
+
+    private val _deepseekApiKey = MutableStateFlow("")
+    val deepseekApiKey: StateFlow<String> = _deepseekApiKey.asStateFlow()
+
+    private val _openaiApiKey = MutableStateFlow("")
+    val openaiApiKey: StateFlow<String> = _openaiApiKey.asStateFlow()
+
+    private val _geminiModel = MutableStateFlow("gemini-3.5-flash")
+    val geminiModel: StateFlow<String> = _geminiModel.asStateFlow()
+
+    private val _deepseekModel = MutableStateFlow("deepseek-chat")
+    val deepseekModel: StateFlow<String> = _deepseekModel.asStateFlow()
+
+    private val _openaiModel = MutableStateFlow("google/gemini-2.5-flash:free")
+    val openaiModel: StateFlow<String> = _openaiModel.asStateFlow()
+
+    private val _deepseekBaseUrl = MutableStateFlow("https://api.deepseek.com/v1/")
+    val deepseekBaseUrl: StateFlow<String> = _deepseekBaseUrl.asStateFlow()
+
+    private val _openaiBaseUrl = MutableStateFlow("https://openrouter.ai/api/v1/")
+    val openaiBaseUrl: StateFlow<String> = _openaiBaseUrl.asStateFlow()
+
+    // Legacy or active state flows (keep for backwards compatibility)
     private val _aiModel = MutableStateFlow("gemini-3.5-flash")
     val aiModel: StateFlow<String> = _aiModel.asStateFlow()
 
@@ -147,9 +172,41 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     init {
         val initPrefs = application.getSharedPreferences("shop_expense_prefs", Context.MODE_PRIVATE)
         _aiProvider.value = initPrefs.getString("ai_provider", "gemini") ?: "gemini"
-        _aiModel.value = initPrefs.getString("ai_model", "gemini-3.5-flash") ?: "gemini-3.5-flash"
-        _aiApiKey.value = initPrefs.getString("ai_api_key", "") ?: ""
-        _aiBaseUrl.value = initPrefs.getString("ai_base_url", "https://openrouter.ai/api/v1/") ?: "https://openrouter.ai/api/v1/"
+
+        val geminiKey = initPrefs.getString("gemini_api_key", "") ?: ""
+        val deepseekKey = initPrefs.getString("deepseek_api_key", "") ?: ""
+        val openaiKey = initPrefs.getString("openai_api_key", "") ?: ""
+
+        // Migrate legacy api key if we had one
+        val legacyKey = initPrefs.getString("ai_api_key", "") ?: ""
+        val initialProvider = _aiProvider.value
+
+        _geminiApiKey.value = if (geminiKey.isBlank() && initialProvider == "gemini") legacyKey else geminiKey
+        _deepseekApiKey.value = if (deepseekKey.isBlank() && initialProvider == "deepseek") legacyKey else deepseekKey
+        _openaiApiKey.value = if (openaiKey.isBlank() && initialProvider == "openai") legacyKey else openaiKey
+
+        _geminiModel.value = initPrefs.getString("gemini_model", "gemini-3.5-flash") ?: "gemini-3.5-flash"
+        _deepseekModel.value = initPrefs.getString("deepseek_model", "deepseek-chat") ?: "deepseek-chat"
+        _openaiModel.value = initPrefs.getString("openai_model", "google/gemini-2.5-flash:free") ?: "google/gemini-2.5-flash:free"
+
+        _deepseekBaseUrl.value = initPrefs.getString("deepseek_base_url", "https://api.deepseek.com/v1/") ?: "https://api.deepseek.com/v1/"
+        _openaiBaseUrl.value = initPrefs.getString("openai_base_url", "https://openrouter.ai/api/v1/") ?: "https://openrouter.ai/api/v1/"
+
+        _aiModel.value = when (initialProvider) {
+            "gemini" -> _geminiModel.value
+            "deepseek" -> _deepseekModel.value
+            else -> _openaiModel.value
+        }
+        _aiApiKey.value = when (initialProvider) {
+            "gemini" -> _geminiApiKey.value
+            "deepseek" -> _deepseekApiKey.value
+            else -> _openaiApiKey.value
+        }
+        _aiBaseUrl.value = when (initialProvider) {
+            "gemini" -> ""
+            "deepseek" -> _deepseekBaseUrl.value
+            else -> _openaiBaseUrl.value
+        }
 
         // Collect scan state and save to draft SharedPreferences reactively
         viewModelScope.launch {
@@ -372,105 +429,218 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun updateAiSettings(provider: String, model: String, apiKey: String, baseUrl: String) {
+        // Fallback overload for legacy call patterns
+        updateAiSettings(
+            provider = provider,
+            geminiKey = if (provider == "gemini") apiKey else _geminiApiKey.value,
+            deepseekKey = if (provider == "deepseek") apiKey else _deepseekApiKey.value,
+            openaiKey = if (provider == "openai") apiKey else _openaiApiKey.value,
+            geminiModel = if (provider == "gemini") model else _geminiModel.value,
+            deepseekModel = if (provider == "deepseek") model else _deepseekModel.value,
+            openaiModel = if (provider != "gemini" && provider != "deepseek") model else _openaiModel.value,
+            deepseekBaseUrl = if (provider == "deepseek") baseUrl else _deepseekBaseUrl.value,
+            openaiBaseUrl = if (provider != "gemini" && provider != "deepseek") baseUrl else _openaiBaseUrl.value
+        )
+    }
+
+    fun updateAiSettings(
+        provider: String,
+        geminiKey: String,
+        deepseekKey: String,
+        openaiKey: String,
+        geminiModel: String,
+        deepseekModel: String,
+        openaiModel: String,
+        deepseekBaseUrl: String,
+        openaiBaseUrl: String
+    ) {
         val prefs = getApplication<Application>().getSharedPreferences("shop_expense_prefs", Context.MODE_PRIVATE)
         prefs.edit().apply {
             putString("ai_provider", provider)
-            putString("ai_model", model)
-            putString("ai_api_key", apiKey)
-            putString("ai_base_url", baseUrl)
+            putString("gemini_api_key", geminiKey)
+            putString("deepseek_api_key", deepseekKey)
+            putString("openai_api_key", openaiKey)
+            putString("gemini_model", geminiModel)
+            putString("deepseek_model", deepseekModel)
+            putString("openai_model", openaiModel)
+            putString("deepseek_base_url", deepseekBaseUrl)
+            putString("openai_base_url", openaiBaseUrl)
             apply()
         }
         _aiProvider.value = provider
-        _aiModel.value = model
-        _aiApiKey.value = apiKey
-        _aiBaseUrl.value = baseUrl
+        _geminiApiKey.value = geminiKey
+        _deepseekApiKey.value = deepseekKey
+        _openaiApiKey.value = openaiKey
+        _geminiModel.value = geminiModel
+        _deepseekModel.value = deepseekModel
+        _openaiModel.value = openaiModel
+        _deepseekBaseUrl.value = deepseekBaseUrl
+        _openaiBaseUrl.value = openaiBaseUrl
+
+        _aiModel.value = when (provider) {
+            "gemini" -> geminiModel
+            "deepseek" -> deepseekModel
+            else -> openaiModel
+        }
+        _aiApiKey.value = when (provider) {
+            "gemini" -> geminiKey
+            "deepseek" -> deepseekKey
+            else -> openaiKey
+        }
+        _aiBaseUrl.value = when (provider) {
+            "gemini" -> ""
+            "deepseek" -> deepseekBaseUrl
+            else -> openaiBaseUrl
+        }
     }
 
-    private suspend fun analyzeReceiptUnified(bitmap: Bitmap): com.example.api.ReceiptAnalysisResult {
-        val provider = _aiProvider.value
-        val model = _aiModel.value
-        val customApiKey = _aiApiKey.value
-        val customBaseUrl = _aiBaseUrl.value
+    private suspend fun tryProviderScan(
+        provider: String,
+        base64Image: String,
+        prompt: String
+    ): com.example.api.ReceiptAnalysisResult {
+        return kotlinx.coroutines.withTimeout(15000L) {
+            if (provider == "openai" || provider == "deepseek") {
+                val customBaseUrl = if (provider == "deepseek") _deepseekBaseUrl.value else _openaiBaseUrl.value
+                val customApiKey = if (provider == "deepseek") _deepseekApiKey.value else _openaiApiKey.value
+                val model = if (provider == "deepseek") _deepseekModel.value else _openaiModel.value
 
-        val base64Image = bitmap.toBase64()
-        val prompt = "Extract the shop name, total spent amount, and receipt issue date from this receipt image. Your response must be a JSON object with keys 'shopName' (String, name of the shop), 'amount' (Number, total spent amount. If not found, use 0.0), and 'date' (String, in format YYYY-MM-DD representing the receipt date issued, or null if not found)."
+                val finalBaseUrl = if (provider == "deepseek" && customBaseUrl.isBlank()) "https://api.deepseek.com/v1/" else customBaseUrl
+                if (finalBaseUrl.isBlank()) {
+                    throw Exception("API Base URL is empty.")
+                }
+                if (customApiKey.isBlank()) {
+                    throw Exception("API Key is empty.")
+                }
 
-        if (provider == "openai") {
-            if (customBaseUrl.isBlank()) {
-                throw Exception("API Base URL is not configured.")
-            }
-            if (customApiKey.isBlank()) {
-                throw Exception("API Key is not configured for OpenAI/Custom Provider.")
-            }
+                val formattedUrl = when {
+                    finalBaseUrl.endsWith("/chat/completions") -> finalBaseUrl
+                    finalBaseUrl.endsWith("/") -> "${finalBaseUrl}chat/completions"
+                    else -> "$finalBaseUrl/chat/completions"
+                }
 
-            val formattedUrl = when {
-                customBaseUrl.endsWith("/chat/completions") -> customBaseUrl
-                customBaseUrl.endsWith("/") -> "${customBaseUrl}chat/completions"
-                else -> "$customBaseUrl/chat/completions"
-            }
+                val finalModel = if (provider == "deepseek" && model.isBlank()) "deepseek-chat" else model.ifBlank { "google/gemini-2.5-flash:free" }
 
-            val request = com.example.api.OpenAiChatRequest(
-                model = model.ifBlank { "google/gemini-2.5-flash:free" },
-                messages = listOf(
-                    com.example.api.OpenAiMessage(
-                        role = "user",
-                        content = listOf(
-                            com.example.api.OpenAiContentPart(type = "text", text = prompt),
-                            com.example.api.OpenAiContentPart(
-                                type = "image_url",
-                                image_url = com.example.api.OpenAiImageUrl(
-                                    url = "data:image/jpeg;base64,$base64Image"
+                val request = com.example.api.OpenAiChatRequest(
+                    model = finalModel,
+                    messages = listOf(
+                        com.example.api.OpenAiMessage(
+                            role = "user",
+                            content = listOf(
+                                com.example.api.OpenAiContentPart(type = "text", text = prompt),
+                                com.example.api.OpenAiContentPart(
+                                    type = "image_url",
+                                    image_url = com.example.api.OpenAiImageUrl(
+                                        url = "data:image/jpeg;base64,$base64Image"
+                                    )
                                 )
                             )
                         )
-                    )
-                ),
-                response_format = com.example.api.OpenAiResponseFormat(type = "json_object"),
-                temperature = 0.1
-            )
-
-            val authHeader = "Bearer $customApiKey"
-            val response = com.example.api.GeminiApiClient.openAiService.chatCompletions(formattedUrl, authHeader, request)
-            val jsonText = response.choices?.firstOrNull()?.message?.content
-            if (jsonText != null) {
-                return com.example.api.GeminiApiClient.parseAnalysisResult(jsonText)
-                    ?: throw Exception("Failed to parse API response schema. Response text: $jsonText")
-            } else {
-                throw Exception("API returned an empty response. Ensure the chosen model supports vision/images.")
-            }
-        } else {
-            val finalApiKey = customApiKey.ifBlank { com.example.BuildConfig.GEMINI_API_KEY }
-            if (finalApiKey == "MY_GEMINI_API_KEY" || finalApiKey.isBlank()) {
-                throw Exception("Gemini API Key is not configured. Please add GEMINI_API_KEY to your Secrets panel in AI Studio or enter a custom key in settings.")
-            }
-
-            val finalModel = if (model.isNotBlank() && model != "gemini-3.5-flash") model else "gemini-3.5-flash"
-            val dynamicUrl = "https://generativelanguage.googleapis.com/v1beta/models/$finalModel:generateContent?key=$finalApiKey"
-
-            val request = GenerateContentRequest(
-                contents = listOf(
-                    Content(
-                        parts = listOf(
-                            Part(text = prompt),
-                            Part(inlineData = InlineData(mimeType = "image/jpeg", data = base64Image))
-                        )
-                    )
-                ),
-                generationConfig = GenerationConfig(
-                    responseMimeType = "application/json",
+                    ),
+                    response_format = com.example.api.OpenAiResponseFormat(type = "json_object"),
                     temperature = 0.1
                 )
-            )
 
-            val response = GeminiApiClient.service.generateContentDynamic(dynamicUrl, request)
-            val jsonText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-            if (jsonText != null) {
-                return GeminiApiClient.parseAnalysisResult(jsonText)
-                    ?: throw Exception("Failed to parse Gemini AI API response schema.")
+                val authHeader = "Bearer $customApiKey"
+                val response = com.example.api.GeminiApiClient.openAiService.chatCompletions(formattedUrl, authHeader, request)
+                val jsonText = response.choices?.firstOrNull()?.message?.content
+                if (jsonText != null) {
+                    com.example.api.GeminiApiClient.parseAnalysisResult(jsonText)
+                        ?: throw Exception("Failed to parse API response schema. Response text: $jsonText")
+                } else {
+                    throw Exception("API returned an empty response.")
+                }
             } else {
-                throw Exception("Gemini AI API returned an empty response.")
+                // Gemini provider
+                val customApiKey = _geminiApiKey.value
+                val finalApiKey = customApiKey.ifBlank { com.example.BuildConfig.GEMINI_API_KEY }
+                if (finalApiKey == "MY_GEMINI_API_KEY" || finalApiKey.isBlank()) {
+                    throw Exception("Gemini API Key is not configured.")
+                }
+
+                val model = _geminiModel.value
+                val finalModel = if (model.isNotBlank() && model != "gemini-3.5-flash") model else "gemini-3.5-flash"
+                val dynamicUrl = "https://generativelanguage.googleapis.com/v1beta/models/$finalModel:generateContent?key=$finalApiKey"
+
+                val request = GenerateContentRequest(
+                    contents = listOf(
+                        Content(
+                            parts = listOf(
+                                Part(text = prompt),
+                                Part(inlineData = InlineData(mimeType = "image/jpeg", data = base64Image))
+                            )
+                        )
+                    ),
+                    generationConfig = GenerationConfig(
+                        responseMimeType = "application/json",
+                        temperature = 0.1
+                    )
+                )
+
+                val response = GeminiApiClient.service.generateContentDynamic(dynamicUrl, request)
+                val jsonText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                if (jsonText != null) {
+                    GeminiApiClient.parseAnalysisResult(jsonText)
+                        ?: throw Exception("Failed to parse Gemini AI API response schema.")
+                } else {
+                    throw Exception("Gemini AI API returned an empty response.")
+                }
             }
         }
+    }
+
+    private suspend fun analyzeReceiptUnified(bitmap: Bitmap): com.example.api.ReceiptAnalysisResult {
+        val base64Image = bitmap.toBase64()
+        val prompt = "Extract the shop name, total spent amount, and receipt issue date from this receipt image. Your response must be a JSON object with keys 'shopName' (String, name of the shop), 'amount' (Number, total spent amount. If not found, use 0.0), and 'date' (String, in format YYYY-MM-DD representing the receipt date issued, or null if not found)."
+
+        // Try the preferred provider first
+        val preferredProvider = _aiProvider.value
+        val providersToTry = mutableListOf(preferredProvider)
+
+        // Add backup providers
+        listOf("gemini", "deepseek", "openai").forEach { p ->
+            if (!providersToTry.contains(p)) {
+                providersToTry.add(p)
+            }
+        }
+
+        val errorsList = mutableListOf<String>()
+
+        for (provider in providersToTry) {
+            val isConfigured = when (provider) {
+                "gemini" -> {
+                    _geminiApiKey.value.isNotBlank() ||
+                    (com.example.BuildConfig.GEMINI_API_KEY.isNotBlank() && com.example.BuildConfig.GEMINI_API_KEY != "MY_GEMINI_API_KEY")
+                }
+                "deepseek" -> _deepseekApiKey.value.isNotBlank()
+                "openai" -> _openaiApiKey.value.isNotBlank()
+                else -> false
+            }
+
+            if (!isConfigured) {
+                if (provider == preferredProvider) {
+                    errorsList.add("$provider is selected but has no API Key.")
+                }
+                continue
+            }
+
+            try {
+                android.util.Log.d("ReceiptScanner", "Attempting scan with provider: $provider")
+                val result = tryProviderScan(provider, base64Image, prompt)
+                return result
+            } catch (e: Exception) {
+                val msg = e.message ?: e.toString()
+                android.util.Log.e("ReceiptScanner", "Scan failed for provider $provider: $msg")
+                errorsList.add("$provider failed: $msg")
+            }
+        }
+
+        val combinedErrorMessage = if (errorsList.isEmpty()) {
+            "No AI providers are configured. Please enter your API Key(s) in the settings menu."
+        } else {
+            "Scan failed across all configured AI providers:\n" + errorsList.joinToString("\n") { "- $it" }
+        }
+        throw Exception(combinedErrorMessage)
     }
 
     fun analyzeReceipt(bitmap: Bitmap, onResult: (String?, Double?, Long?) -> Unit) {
