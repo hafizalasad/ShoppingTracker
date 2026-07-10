@@ -197,9 +197,13 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 putString("gemini_api_key", legacyPrefs.getString("gemini_api_key", ""))
                 putString("deepseek_api_key", legacyPrefs.getString("deepseek_api_key", ""))
                 putString("openai_api_key", legacyPrefs.getString("openai_api_key", ""))
-                putString("gemini_model", legacyPrefs.getString("gemini_model", "gemini-3.5-flash"))
+                val legacyGemini = legacyPrefs.getString("gemini_model", "gemini-3.5-flash")
+                val safeGemini = if (legacyGemini == "gemini-1.5-flash") "gemini-2.5-flash" else legacyGemini
+                putString("gemini_model", safeGemini)
                 putString("deepseek_model", legacyPrefs.getString("deepseek_model", "deepseek-chat"))
-                putString("openai_model", legacyPrefs.getString("openai_model", "google/gemini-2.5-flash:free"))
+                val legacyOpenai = legacyPrefs.getString("openai_model", "google/gemini-2.5-flash")
+                val safeOpenai = if (legacyOpenai == "google/gemini-2.5-flash:free") "google/gemini-2.5-flash" else legacyOpenai
+                putString("openai_model", safeOpenai)
                 putString("deepseek_base_url", legacyPrefs.getString("deepseek_base_url", "https://api.deepseek.com/v1/"))
                 putString("openai_base_url", legacyPrefs.getString("openai_base_url", "https://openrouter.ai/api/v1/"))
                 apply()
@@ -234,9 +238,21 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         _deepseekApiKey.value = if (deepseekKey.isBlank() && initialProvider == "deepseek") legacyKey else deepseekKey
         _openaiApiKey.value = if (openaiKey.isBlank() && initialProvider == "openai") legacyKey else openaiKey
 
-        _geminiModel.value = securePrefs.getString("gemini_model", "gemini-3.5-flash") ?: "gemini-3.5-flash"
+        var currentGeminiModel = securePrefs.getString("gemini_model", "gemini-3.5-flash") ?: "gemini-3.5-flash"
+        if (currentGeminiModel == "gemini-1.5-flash") {
+            currentGeminiModel = "gemini-2.5-flash"
+            securePrefs.edit().putString("gemini_model", "gemini-2.5-flash").apply()
+        }
+        _geminiModel.value = currentGeminiModel
+
         _deepseekModel.value = securePrefs.getString("deepseek_model", "deepseek-chat") ?: "deepseek-chat"
-        _openaiModel.value = securePrefs.getString("openai_model", "google/gemini-2.5-flash:free") ?: "google/gemini-2.5-flash:free"
+
+        var currentOpenaiModel = securePrefs.getString("openai_model", "google/gemini-2.5-flash") ?: "google/gemini-2.5-flash"
+        if (currentOpenaiModel == "google/gemini-2.5-flash:free") {
+            currentOpenaiModel = "google/gemini-2.5-flash"
+            securePrefs.edit().putString("openai_model", "google/gemini-2.5-flash").apply()
+        }
+        _openaiModel.value = currentOpenaiModel
 
         _deepseekBaseUrl.value = securePrefs.getString("deepseek_base_url", "https://api.deepseek.com/v1/") ?: "https://api.deepseek.com/v1/"
         _openaiBaseUrl.value = securePrefs.getString("openai_base_url", "https://openrouter.ai/api/v1/") ?: "https://openrouter.ai/api/v1/"
@@ -568,7 +584,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                     else -> "$finalBaseUrl/chat/completions"
                 }
 
-                val finalModel = if (provider == "deepseek" && model.isBlank()) "deepseek-chat" else model.ifBlank { "google/gemini-2.5-flash:free" }
+                val finalModel = if (provider == "deepseek" && model.isBlank()) "deepseek-chat" else model.ifBlank { "google/gemini-2.5-flash" }
 
                 val request = com.example.api.OpenAiChatRequest(
                     model = finalModel,
@@ -646,10 +662,21 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         val preferredProvider = _aiProvider.value
         val providersToTry = mutableListOf(preferredProvider)
 
-        // Add backup providers
-        listOf("gemini", "deepseek", "openai").forEach { p ->
+        // Add backup vision-capable providers sequentially (Gemini and OpenAI/OpenRouter both support vision models)
+        listOf("gemini", "openai").forEach { p ->
             if (!providersToTry.contains(p)) {
                 providersToTry.add(p)
+            }
+        }
+
+        // Only add deepseek as a fallback if it is explicitly configured with a custom vision model, since official DeepSeek is text-only
+        val deepseekModelStr = _deepseekModel.value
+        val isDeepseekVisionCapable = deepseekModelStr.isNotBlank() && 
+                deepseekModelStr != "deepseek-chat" && 
+                deepseekModelStr != "deepseek-reasoner"
+        if (isDeepseekVisionCapable) {
+            if (!providersToTry.contains("deepseek")) {
+                providersToTry.add("deepseek")
             }
         }
 

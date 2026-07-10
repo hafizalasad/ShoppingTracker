@@ -474,7 +474,7 @@ fun ScanReceiptScreen(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                                             ) {
-                                                listOf("gemini-3.5-flash", "gemini-2.5-flash", "gemini-1.5-flash").forEach { suggestedModel ->
+                                                listOf("gemini-3.5-flash", "gemini-2.5-flash").forEach { suggestedModel ->
                                                     Box(
                                                         modifier = Modifier
                                                             .clip(RoundedCornerShape(6.dp))
@@ -1168,7 +1168,7 @@ fun ScanReceiptScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                listOf("gemini-3.5-flash", "gemini-2.5-flash", "gemini-1.5-flash").forEach { suggestedModel ->
+                                listOf("gemini-3.5-flash", "gemini-2.5-flash").forEach { suggestedModel ->
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(8.dp))
