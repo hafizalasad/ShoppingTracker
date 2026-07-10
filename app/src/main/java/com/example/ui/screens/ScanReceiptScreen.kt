@@ -35,6 +35,9 @@ import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -113,6 +116,17 @@ fun ScanReceiptScreen(
     }
 
     var showSettingsDialog by remember { mutableStateOf(false) }
+
+    var inlineProvider by remember(aiProvider) { mutableStateOf(aiProvider) }
+    var inlineGeminiKey by remember(geminiApiKey) { mutableStateOf(geminiApiKey) }
+    var inlineDeepseekKey by remember(deepseekApiKey) { mutableStateOf(deepseekApiKey) }
+    var inlineOpenaiKey by remember(openaiApiKey) { mutableStateOf(openaiApiKey) }
+    var inlineGeminiModel by remember(geminiModel) { mutableStateOf(geminiModel) }
+    var inlineDeepseekModel by remember(deepseekModel) { mutableStateOf(deepseekModel) }
+    var inlineOpenaiModel by remember(openaiModel) { mutableStateOf(openaiModel) }
+    var inlineDeepseekBaseUrl by remember(deepseekBaseUrl) { mutableStateOf(deepseekBaseUrl) }
+    var inlineOpenaiBaseUrl by remember(openaiBaseUrl) { mutableStateOf(openaiBaseUrl) }
+    var showSaveSuccessMsg by remember { mutableStateOf(false) }
 
     BackHandler(enabled = true) {
         viewModel.navigateTo(Screen.Main)
@@ -194,47 +208,59 @@ fun ScanReceiptScreen(
                 .background(MaterialTheme.colorScheme.background)
         ) {
             if (state.imagePath == null) {
-                // Step 1: Selection layout
-                Box(
+                // Step 1: Selection and Settings layout
+                Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                    // Title Header Card
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.CloudUpload,
-                            contentDescription = "Upload Receipt",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(100.dp)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = if (aiProvider == "gemini") "Analyze Receipts using Gemini AI" else "Analyze Receipts using custom AI",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Take a photo of your receipt or upload it from your gallery. Our AI will automatically extract the shop name and amount spent in Taka (BDT) or other preferred currencies.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.outline,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudUpload,
+                                contentDescription = "Upload Receipt",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(72.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Scan Receipts with AI",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Upload or take a photo of your receipt. Our system extracts shop names, spent amounts, and items using your preferred AI engine.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
 
-                        Spacer(modifier = Modifier.height(40.dp))
-
+                    // Action buttons Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         Button(
                             onClick = { cameraLauncher.launch(cameraUri) },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .weight(1f)
                                 .height(56.dp)
                                 .testTag("take_photo_button"),
                             colors = ButtonDefaults.buttonColors(
@@ -242,11 +268,9 @@ fun ScanReceiptScreen(
                             )
                         ) {
                             Icon(imageVector = Icons.Default.CameraAlt, contentDescription = "Camera")
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text("Take Photo", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Take Photo", fontWeight = FontWeight.Bold)
                         }
-
-                        Spacer(modifier = Modifier.height(16.dp))
 
                         OutlinedButton(
                             onClick = {
@@ -256,13 +280,396 @@ fun ScanReceiptScreen(
                             },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .weight(1f)
                                 .height(56.dp)
                                 .testTag("choose_gallery_button")
                         ) {
                             Icon(imageVector = Icons.Default.PhotoLibrary, contentDescription = "Gallery")
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text("Choose from Gallery", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Choose Gallery", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Multi-AI configuration card
+                    val uriHandler = LocalUriHandler.current
+                    var activeConfigTab by remember { mutableStateOf(inlineProvider) }
+
+                    val hasChanges = inlineProvider != aiProvider ||
+                            inlineGeminiKey != geminiApiKey ||
+                            inlineDeepseekKey != deepseekApiKey ||
+                            inlineOpenaiKey != openaiApiKey ||
+                            inlineGeminiModel != geminiModel ||
+                            inlineDeepseekModel != deepseekModel ||
+                            inlineOpenaiModel != openaiModel ||
+                            inlineDeepseekBaseUrl != deepseekBaseUrl ||
+                            inlineOpenaiBaseUrl != openaiBaseUrl
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "⚡ Scanner Priority & Keys",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                
+                                // Reset / Info button
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "Failover Enabled 🔄",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            Text(
+                                text = "Select your preferred first priority AI scanner. If it fails, hits rate limits, or is missing keys, we automatically try secondary providers in real-time.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            // Tabs selector for configuring each provider
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    Triple("gemini", "Gemini", inlineGeminiKey.isNotBlank()),
+                                    Triple("deepseek", "DeepSeek", inlineDeepseekKey.isNotBlank()),
+                                    Triple("openai", "OpenRouter", inlineOpenaiKey.isNotBlank())
+                                ).forEach { (id, name, hasKey) ->
+                                    val isSelected = activeConfigTab == id
+                                    val isPriority = inlineProvider == id
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(
+                                                if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                            )
+                                            .clickable { activeConfigTab = id }
+                                            .border(
+                                                width = 1.dp,
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent,
+                                                shape = RoundedCornerShape(8.dp)
+                                            )
+                                            .padding(vertical = 10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = name,
+                                                    style = MaterialTheme.typography.labelLarge,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                if (isPriority) {
+                                                    Text(
+                                                        text = " ★",
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 11.sp
+                                                    )
+                                                }
+                                            }
+                                            Text(
+                                                text = if (id == "gemini") "System/Custom" else if (hasKey) "🟢 Configured" else "🔴 Missing Key",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 9.sp,
+                                                color = if (id == "gemini") MaterialTheme.colorScheme.primary else if (hasKey) androidx.compose.ui.graphics.Color(0xFF2E7D32) else MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Active tab content area
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    // 1. Priority Toggle banner
+                                    val currentIsPriority = inlineProvider == activeConfigTab
+                                    if (currentIsPriority) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(
+                                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                                                    RoundedCornerShape(6.dp)
+                                                )
+                                                .padding(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Star,
+                                                contentDescription = "Priority Set",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = "This provider will receive first priority when scanning receipts.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.Medium,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = { inlineProvider = activeConfigTab },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
+                                                contentColor = MaterialTheme.colorScheme.onSurface
+                                            ),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            contentPadding = PaddingValues(vertical = 4.dp)
+                                        ) {
+                                            Text("Set as 1st Priority Scanner ⭐", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+
+                                    // 2. Specific Settings Fields
+                                    when (activeConfigTab) {
+                                        "gemini" -> {
+                                            OutlinedTextField(
+                                                value = inlineGeminiModel,
+                                                onValueChange = { inlineGeminiModel = it },
+                                                label = { Text("Model Name") },
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                listOf("gemini-3.5-flash", "gemini-2.5-flash", "gemini-1.5-flash").forEach { suggestedModel ->
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(6.dp))
+                                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                            .clickable { inlineGeminiModel = suggestedModel }
+                                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    ) {
+                                                        Text(suggestedModel, style = MaterialTheme.typography.labelSmall)
+                                                    }
+                                                }
+                                            }
+
+                                            OutlinedTextField(
+                                                value = inlineGeminiKey,
+                                                onValueChange = { inlineGeminiKey = it },
+                                                label = { Text("Gemini API Key") },
+                                                placeholder = { Text("Default: AI Studio System Key") },
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth(),
+                                                visualTransformation = if (inlineGeminiKey.isBlank()) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation()
+                                            )
+
+                                            Button(
+                                                onClick = { uriHandler.openUri("https://aistudio.google.com/") },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                                    contentColor = MaterialTheme.colorScheme.primary
+                                                ),
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = RoundedCornerShape(6.dp)
+                                            ) {
+                                                Text("🔑 Get Gemini API Key", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                                            }
+                                        }
+                                        "deepseek" -> {
+                                            OutlinedTextField(
+                                                value = inlineDeepseekBaseUrl,
+                                                onValueChange = { inlineDeepseekBaseUrl = it },
+                                                label = { Text("Base URL") },
+                                                placeholder = { Text("https://api.deepseek.com/v1/") },
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+
+                                            OutlinedTextField(
+                                                value = inlineDeepseekModel,
+                                                onValueChange = { inlineDeepseekModel = it },
+                                                label = { Text("Model Name") },
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                listOf("deepseek-chat", "deepseek-reasoner").forEach { suggestedModel ->
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(6.dp))
+                                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                            .clickable { inlineDeepseekModel = suggestedModel }
+                                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    ) {
+                                                        Text(suggestedModel, style = MaterialTheme.typography.labelSmall)
+                                                    }
+                                                }
+                                            }
+
+                                            OutlinedTextField(
+                                                value = inlineDeepseekKey,
+                                                onValueChange = { inlineDeepseekKey = it },
+                                                label = { Text("DeepSeek API Key") },
+                                                placeholder = { Text("Enter DeepSeek API key") },
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth(),
+                                                visualTransformation = if (inlineDeepseekKey.isBlank()) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation()
+                                            )
+
+                                            Button(
+                                                onClick = { uriHandler.openUri("https://platform.deepseek.com/") },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                                    contentColor = MaterialTheme.colorScheme.primary
+                                                ),
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = RoundedCornerShape(6.dp)
+                                            ) {
+                                                Text("🔑 Get DeepSeek API Key", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                                            }
+                                        }
+                                        "openai" -> {
+                                            OutlinedTextField(
+                                                value = inlineOpenaiBaseUrl,
+                                                onValueChange = { inlineOpenaiBaseUrl = it },
+                                                label = { Text("Base URL") },
+                                                placeholder = { Text("e.g. https://openrouter.ai/api/v1/") },
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+
+                                            OutlinedTextField(
+                                                value = inlineOpenaiModel,
+                                                onValueChange = { inlineOpenaiModel = it },
+                                                label = { Text("Model Name") },
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                listOf("google/gemini-2.5-flash:free", "deepseek/deepseek-chat").forEach { suggestedModel ->
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(6.dp))
+                                                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                            .clickable { inlineOpenaiModel = suggestedModel }
+                                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    ) {
+                                                        Text(suggestedModel.substringAfterLast("/"), style = MaterialTheme.typography.labelSmall)
+                                                    }
+                                                }
+                                            }
+
+                                            OutlinedTextField(
+                                                value = inlineOpenaiKey,
+                                                onValueChange = { inlineOpenaiKey = it },
+                                                label = { Text("API Key") },
+                                                placeholder = { Text("Enter OpenRouter API key") },
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth(),
+                                                visualTransformation = if (inlineOpenaiKey.isBlank()) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation()
+                                            )
+
+                                            Button(
+                                                onClick = { uriHandler.openUri("https://openrouter.ai/") },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                                                    contentColor = MaterialTheme.colorScheme.primary
+                                                ),
+                                                modifier = Modifier.fillMaxWidth(),
+                                                shape = RoundedCornerShape(6.dp)
+                                            ) {
+                                                Text("🔑 Get OpenRouter API Key", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Save confirmation banner
+                            AnimatedVisibility(visible = showSaveSuccessMsg) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(androidx.compose.ui.graphics.Color(0xFFE8F5E9), RoundedCornerShape(8.dp))
+                                        .padding(12.dp)
+                                ) {
+                                    Text(
+                                        text = "🟢 Scanner priorities and keys saved successfully!",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = androidx.compose.ui.graphics.Color(0xFF2E7D32),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            // Save settings button
+                            Button(
+                                onClick = {
+                                    viewModel.updateAiSettings(
+                                        provider = inlineProvider,
+                                        geminiKey = inlineGeminiKey,
+                                        deepseekKey = inlineDeepseekKey,
+                                        openaiKey = inlineOpenaiKey,
+                                        geminiModel = inlineGeminiModel,
+                                        deepseekModel = inlineDeepseekModel,
+                                        openaiModel = inlineOpenaiModel,
+                                        deepseekBaseUrl = inlineDeepseekBaseUrl,
+                                        openaiBaseUrl = inlineOpenaiBaseUrl
+                                    )
+                                    showSaveSuccessMsg = true
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (hasChanges) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                ),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text(
+                                    text = if (hasChanges) "Save AI Settings (Unsaved Changes) ★" else "Save AI Settings",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
@@ -418,21 +825,41 @@ fun ScanReceiptScreen(
                                 .fillMaxWidth()
                                 .padding(bottom = 16.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = "Error icon",
-                                    tint = MaterialTheme.colorScheme.error
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = "Error icon",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = "AI extraction error: ${state.analysisError}.",
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = "AI extraction error: ${state.analysisError}. Please enter the details manually below.",
+                                    text = "To bypass Gemini rate limits, you can easily configure DeepSeek or OpenAI/OpenRouter keys, or change your 1st priority scanner using the button below.",
                                     color = MaterialTheme.colorScheme.onErrorContainer,
-                                    fontSize = 12.sp
+                                    fontSize = 11.sp
                                 )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    TextButton(
+                                        onClick = { showSettingsDialog = true }
+                                    ) {
+                                        Text("⚙️ Adjust AI priorities & keys", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
                             }
                         }
                     }
