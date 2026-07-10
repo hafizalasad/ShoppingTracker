@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -543,6 +544,15 @@ fun ScanReceiptScreen(
                                                 }
                                             }
 
+                                            Text(
+                                                text = "⚠️ Note: Official standalone DeepSeek (api.deepseek.com) is text-only and doesn't support image vision. Standard scans will fail unless you use a vision-supporting model or custom base URL.",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.error,
+                                                fontSize = 9.sp,
+                                                lineHeight = 12.sp,
+                                                modifier = Modifier.padding(top = 2.dp)
+                                            )
+
                                             OutlinedTextField(
                                                 value = inlineDeepseekKey,
                                                 onValueChange = { inlineDeepseekKey = it },
@@ -583,11 +593,19 @@ fun ScanReceiptScreen(
                                                 modifier = Modifier.fillMaxWidth()
                                             )
 
-                                            Row(
+                                            Text("Suggested Vision Models:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            androidx.compose.foundation.lazy.LazyRow(
                                                 modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                                             ) {
-                                                listOf("google/gemini-2.5-flash:free", "deepseek/deepseek-chat").forEach { suggestedModel ->
+                                                items(listOf(
+                                                    "google/gemini-2.5-flash" to "Gemini 2.5 Flash",
+                                                    "meta-llama/llama-3.2-11b-vision-instruct:free" to "Llama 3.2 Vision (Free)",
+                                                    "qwen/qwen-2-vl-7b-instruct:free" to "Qwen VL (Free)",
+                                                    "openai/gpt-4o-mini" to "GPT-4o Mini",
+                                                    "anthropic/claude-3.5-sonnet" to "Claude 3.5 Sonnet",
+                                                    "google/gemini-2.5-flash:free" to "Gemini 2.5 Flash (Free)"
+                                                )) { (suggestedModel, label) ->
                                                     Box(
                                                         modifier = Modifier
                                                             .clip(RoundedCornerShape(6.dp))
@@ -595,7 +613,7 @@ fun ScanReceiptScreen(
                                                             .clickable { inlineOpenaiModel = suggestedModel }
                                                             .padding(horizontal = 8.dp, vertical = 4.dp)
                                                     ) {
-                                                        Text(suggestedModel.substringAfterLast("/"), style = MaterialTheme.typography.labelSmall)
+                                                        Text(label, style = MaterialTheme.typography.labelSmall)
                                                     }
                                                 }
                                             }
@@ -1239,6 +1257,15 @@ fun ScanReceiptScreen(
                                 }
                             }
 
+                            Text(
+                                text = "⚠️ Note: Official standalone DeepSeek (api.deepseek.com) is text-only and doesn't support image vision. Standard scans will fail unless you use a vision-supporting model or custom base URL.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 10.sp,
+                                lineHeight = 13.sp,
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+
                             OutlinedTextField(
                                 value = tempDeepseekKey,
                                 onValueChange = { tempDeepseekKey = it },
@@ -1298,11 +1325,19 @@ fun ScanReceiptScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
 
-                            Row(
+                            Text("Suggested Vision Models:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            androidx.compose.foundation.lazy.LazyRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                listOf("google/gemini-2.5-flash:free", "deepseek/deepseek-chat").forEach { suggestedModel ->
+                                items(listOf(
+                                    "google/gemini-2.5-flash" to "Gemini 2.5 Flash",
+                                    "meta-llama/llama-3.2-11b-vision-instruct:free" to "Llama 3.2 Vision (Free)",
+                                    "qwen/qwen-2-vl-7b-instruct:free" to "Qwen VL (Free)",
+                                    "openai/gpt-4o-mini" to "GPT-4o Mini",
+                                    "anthropic/claude-3.5-sonnet" to "Claude 3.5 Sonnet",
+                                    "google/gemini-2.5-flash:free" to "Gemini 2.5 Flash (Free)"
+                                )) { (suggestedModel, label) ->
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(8.dp))
@@ -1310,7 +1345,7 @@ fun ScanReceiptScreen(
                                             .clickable { tempOpenaiModel = suggestedModel }
                                             .padding(horizontal = 8.dp, vertical = 4.dp)
                                     ) {
-                                        Text(suggestedModel.substringAfterLast("/"), style = MaterialTheme.typography.labelMedium)
+                                        Text(label, style = MaterialTheme.typography.labelMedium)
                                     }
                                 }
                             }

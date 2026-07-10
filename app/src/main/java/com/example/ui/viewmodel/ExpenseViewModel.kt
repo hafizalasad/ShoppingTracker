@@ -169,28 +169,77 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         initialValue = loadScanDraft()
     )
 
-    init {
-        val initPrefs = application.getSharedPreferences("shop_expense_prefs", Context.MODE_PRIVATE)
-        _aiProvider.value = initPrefs.getString("ai_provider", "gemini") ?: "gemini"
+    private fun getSecurePrefs(context: Context): android.content.SharedPreferences {
+        return try {
+            val masterKeyAlias = androidx.security.crypto.MasterKeys.getOrCreate(androidx.security.crypto.MasterKeys.AES256_GCM_SPEC)
+            androidx.security.crypto.EncryptedSharedPreferences.create(
+                "secure_ai_settings",
+                masterKeyAlias,
+                context,
+                androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // If keystore fails for any reason, fall back to standard SharedPreferences for robustness
+            context.getSharedPreferences("secure_ai_settings_fallback", Context.MODE_PRIVATE)
+        }
+    }
 
-        val geminiKey = initPrefs.getString("gemini_api_key", "") ?: ""
-        val deepseekKey = initPrefs.getString("deepseek_api_key", "") ?: ""
-        val openaiKey = initPrefs.getString("openai_api_key", "") ?: ""
+    init {
+        val legacyPrefs = application.getSharedPreferences("shop_expense_prefs", Context.MODE_PRIVATE)
+        val securePrefs = getSecurePrefs(application)
+
+        // Migrating old plain-text keys to EncryptedSharedPreferences if present
+        if (!securePrefs.contains("ai_provider") && legacyPrefs.contains("ai_provider")) {
+            securePrefs.edit().apply {
+                putString("ai_provider", legacyPrefs.getString("ai_provider", "gemini"))
+                putString("gemini_api_key", legacyPrefs.getString("gemini_api_key", ""))
+                putString("deepseek_api_key", legacyPrefs.getString("deepseek_api_key", ""))
+                putString("openai_api_key", legacyPrefs.getString("openai_api_key", ""))
+                putString("gemini_model", legacyPrefs.getString("gemini_model", "gemini-3.5-flash"))
+                putString("deepseek_model", legacyPrefs.getString("deepseek_model", "deepseek-chat"))
+                putString("openai_model", legacyPrefs.getString("openai_model", "google/gemini-2.5-flash:free"))
+                putString("deepseek_base_url", legacyPrefs.getString("deepseek_base_url", "https://api.deepseek.com/v1/"))
+                putString("openai_base_url", legacyPrefs.getString("openai_base_url", "https://openrouter.ai/api/v1/"))
+                apply()
+            }
+            // Securely wipe sensitive keys from insecure plain text SharedPreferences
+            legacyPrefs.edit().apply {
+                remove("ai_provider")
+                remove("gemini_api_key")
+                remove("deepseek_api_key")
+                remove("openai_api_key")
+                remove("gemini_model")
+                remove("deepseek_model")
+                remove("openai_model")
+                remove("deepseek_base_url")
+                remove("openai_base_url")
+                remove("ai_api_key")
+                apply()
+            }
+        }
+
+        _aiProvider.value = securePrefs.getString("ai_provider", "gemini") ?: "gemini"
+
+        val geminiKey = securePrefs.getString("gemini_api_key", "") ?: ""
+        val deepseekKey = securePrefs.getString("deepseek_api_key", "") ?: ""
+        val openaiKey = securePrefs.getString("openai_api_key", "") ?: ""
 
         // Migrate legacy api key if we had one
-        val legacyKey = initPrefs.getString("ai_api_key", "") ?: ""
+        val legacyKey = legacyPrefs.getString("ai_api_key", "") ?: ""
         val initialProvider = _aiProvider.value
 
         _geminiApiKey.value = if (geminiKey.isBlank() && initialProvider == "gemini") legacyKey else geminiKey
         _deepseekApiKey.value = if (deepseekKey.isBlank() && initialProvider == "deepseek") legacyKey else deepseekKey
         _openaiApiKey.value = if (openaiKey.isBlank() && initialProvider == "openai") legacyKey else openaiKey
 
-        _geminiModel.value = initPrefs.getString("gemini_model", "gemini-3.5-flash") ?: "gemini-3.5-flash"
-        _deepseekModel.value = initPrefs.getString("deepseek_model", "deepseek-chat") ?: "deepseek-chat"
-        _openaiModel.value = initPrefs.getString("openai_model", "google/gemini-2.5-flash:free") ?: "google/gemini-2.5-flash:free"
+        _geminiModel.value = securePrefs.getString("gemini_model", "gemini-3.5-flash") ?: "gemini-3.5-flash"
+        _deepseekModel.value = securePrefs.getString("deepseek_model", "deepseek-chat") ?: "deepseek-chat"
+        _openaiModel.value = securePrefs.getString("openai_model", "google/gemini-2.5-flash:free") ?: "google/gemini-2.5-flash:free"
 
-        _deepseekBaseUrl.value = initPrefs.getString("deepseek_base_url", "https://api.deepseek.com/v1/") ?: "https://api.deepseek.com/v1/"
-        _openaiBaseUrl.value = initPrefs.getString("openai_base_url", "https://openrouter.ai/api/v1/") ?: "https://openrouter.ai/api/v1/"
+        _deepseekBaseUrl.value = securePrefs.getString("deepseek_base_url", "https://api.deepseek.com/v1/") ?: "https://api.deepseek.com/v1/"
+        _openaiBaseUrl.value = securePrefs.getString("openai_base_url", "https://openrouter.ai/api/v1/") ?: "https://openrouter.ai/api/v1/"
 
         _aiModel.value = when (initialProvider) {
             "gemini" -> _geminiModel.value
@@ -454,8 +503,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         deepseekBaseUrl: String,
         openaiBaseUrl: String
     ) {
-        val prefs = getApplication<Application>().getSharedPreferences("shop_expense_prefs", Context.MODE_PRIVATE)
-        prefs.edit().apply {
+        val securePrefs = getSecurePrefs(getApplication())
+        securePrefs.edit().apply {
             putString("ai_provider", provider)
             putString("gemini_api_key", geminiKey)
             putString("deepseek_api_key", deepseekKey)
