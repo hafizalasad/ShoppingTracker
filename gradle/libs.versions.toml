@@ -40,8 +40,10 @@ firebaseBom = "34.15.0"
 secretsGradlePlugin = "2.0.1"
 googleServices = "4.5.0"
 securityCrypto = "1.1.0-alpha06"
+playServicesMlkitTextRecognition = "19.0.1"
 
 [libraries]
+play-services-mlkit-text-recognition = { group = "com.google.android.gms", name = "play-services-mlkit-text-recognition", version.ref = "playServicesMlkitTextRecognition" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }

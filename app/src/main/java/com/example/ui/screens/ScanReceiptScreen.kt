@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Star
@@ -208,7 +209,7 @@ fun ScanReceiptScreen(
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            if (state.imagePath == null) {
+            if (state.imagePath == null && !state.isManualEntry) {
                 // Step 1: Selection and Settings layout
                 Column(
                     modifier = Modifier
@@ -745,45 +746,113 @@ fun ScanReceiptScreen(
                         .verticalScroll(rememberScrollState())
                         .padding(20.dp)
                 ) {
-                    // Receipt thumbnail
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                            .clip(RoundedCornerShape(16.dp)),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                    ) {
-                        Box(
+                    // Receipt thumbnail (or attachment picker if manual entry)
+                    val currentImagePath = state.imagePath
+                    if (currentImagePath != null) {
+                        Card(
                             modifier = Modifier
-                                .fillMaxSize()
-                                .clickable {
-                                    viewModel.navigateTo(Screen.ZoomImage(state.imagePath!!, Screen.ScanReceipt))
-                                }
-                                .testTag("scan_preview_zoom"),
-                            contentAlignment = Alignment.Center
+                                .fillMaxWidth()
+                                .height(200.dp)
+                                .clip(RoundedCornerShape(16.dp)),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
-                            AsyncImage(
-                                model = File(state.imagePath!!),
-                                contentDescription = "Scanned Receipt preview",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.2f)),
-                                contentAlignment = Alignment.BottomEnd
+                                    .clickable {
+                                        viewModel.navigateTo(Screen.ZoomImage(currentImagePath, Screen.ScanReceipt))
+                                    }
+                                    .testTag("scan_preview_zoom"),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    "Tap to zoom",
-                                    color = androidx.compose.ui.graphics.Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    modifier = Modifier
-                                        .padding(8.dp)
-                                        .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                AsyncImage(
+                                    model = File(currentImagePath),
+                                    contentDescription = "Scanned Receipt preview",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
                                 )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.2f)),
+                                    contentAlignment = Alignment.BottomEnd
+                                ) {
+                                    Text(
+                                        "Tap to zoom",
+                                        color = androidx.compose.ui.graphics.Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier
+                                            .padding(8.dp)
+                                            .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        // Optional receipt attachment card for manual input
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CameraAlt,
+                                    contentDescription = "Add receipt image",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(36.dp)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "Attach Receipt Photo (Optional)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "Attach an image to keep it saved with this manual entry.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Button(
+                                        onClick = { cameraLauncher.launch(cameraUri) },
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.weight(1f).height(40.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.CameraAlt, contentDescription = "Camera", modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Camera", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            galleryLauncher.launch(
+                                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                            )
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.weight(1f).height(40.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.PhotoLibrary, contentDescription = "Gallery", modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Gallery", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
                             }
                         }
                     }
@@ -791,44 +860,73 @@ fun ScanReceiptScreen(
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Text(
-                        text = "Verify Receipt Details",
+                        text = if (state.isManualEntry) "Add Expense Details" else "Verify Receipt Details",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Text(
-                        text = "Review and edit the values extracted by Gemini AI before saving.",
+                        text = if (state.isManualEntry) "Fill in the details below to log your manual expense." else "Review and edit the values extracted from your receipt before saving.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline
                     )
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Notice if offline
-                    AnimatedVisibility(visible = state.isOffline) {
+                    // Dynamic scanning method and confidence indicator banner
+                    if (!state.isManualEntry && state.confidenceScore != null) {
+                        val isLow = state.isConfidenceLow
+                        val isAi = state.scannedWithAi
+                        val cardBgColor = when {
+                            isAi -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                            isLow -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+                            else -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                        }
+                        val tintColor = when {
+                            isAi -> MaterialTheme.colorScheme.primary
+                            isLow -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.primary
+                        }
                         Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                            ),
+                            colors = CardDefaults.cardColors(containerColor = cardBgColor),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 16.dp)
+                                .testTag("scan_confidence_banner"),
+                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Row(
                                 modifier = Modifier.padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.CloudUpload,
-                                    contentDescription = "Offline mode",
-                                    tint = MaterialTheme.colorScheme.tertiary
+                                    imageVector = if (isLow) Icons.Default.Info else Icons.Default.CheckCircle,
+                                    contentDescription = "Scan Source Indicator",
+                                    tint = tintColor,
+                                    modifier = Modifier.size(24.dp)
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = "You are currently offline. We saved your receipt locally! Gemini AI will automatically process this in the background once you're online.",
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    fontSize = 12.sp
-                                )
+                                Column {
+                                    Text(
+                                        text = when {
+                                            isAi -> "Enhanced with Gemini AI"
+                                            isLow -> "OCR Confidence is Low (${state.confidenceScore}%)"
+                                            else -> "Secure Local OCR Succeeded (${state.confidenceScore}%)"
+                                        },
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isLow) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        text = when {
+                                            isAi -> "Extracted using cloud-based multimodal intelligence. High precision."
+                                            isLow -> "Please check the auto-extracted values below carefully. Low confidence may be due to complex layouts, noise, or faded text."
+                                            else -> "Extracted locally on your device using Google ML Kit Text Recognition. Private and offline."
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isLow) MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                    )
+                                }
                             }
                         }
                     }
@@ -944,6 +1042,28 @@ fun ScanReceiptScreen(
                             .fillMaxWidth()
                             .clickable { viewModel.onScanIntent(ScanUiIntent.ToggleDatePicker(true)) }
                             .testTag("date_input"),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Text Field: Note
+                    OutlinedTextField(
+                        value = state.note,
+                        onValueChange = { viewModel.onScanIntent(ScanUiIntent.UpdateNote(it)) },
+                        label = { Text("Note / Description") },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Notes,
+                                contentDescription = "Note",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        placeholder = { Text("Add any extra notes or item details here...") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("note_input"),
+                        maxLines = 4,
                         shape = RoundedCornerShape(12.dp)
                     )
 

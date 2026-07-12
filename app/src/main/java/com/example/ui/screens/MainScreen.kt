@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -32,6 +33,7 @@ import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -72,7 +74,9 @@ import com.example.ui.components.DayWiseBarChart
 import com.example.ui.components.ShopPieChart
 import com.example.ui.viewmodel.ExpenseViewModel
 import com.example.ui.viewmodel.MainUiIntent
+import com.example.ui.viewmodel.Screen
 import com.example.ui.viewmodel.MainUiState
+import com.example.ui.viewmodel.ScanUiIntent
 import com.example.ui.viewmodel.ShopExpenseSummary
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -164,6 +168,17 @@ fun MainScreen(
                             }
                         }
                     }
+
+                    IconButton(
+                        onClick = { viewModel.navigateTo(Screen.Settings) },
+                        modifier = Modifier.testTag("main_settings_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Scan Settings",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
@@ -172,26 +187,58 @@ fun MainScreen(
         },
         modifier = modifier,
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    // Emit Intent to navigate to Scan Screen
-                    viewModel.onMainIntent(MainUiIntent.NavigateToScan)
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.testTag("scan_receipt_fab")
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Secondary FAB for scanning receipt
+                FloatingActionButton(
+                    onClick = {
+                        viewModel.onScanIntent(ScanUiIntent.StartManualEntry(false))
+                        viewModel.onMainIntent(MainUiIntent.NavigateToScan)
+                    },
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.testTag("scan_receipt_fab")
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.AddAPhoto,
-                        contentDescription = "Scan Receipt"
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Scan Receipt", fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AddAPhoto,
+                            contentDescription = "Scan Receipt",
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Scan Receipt", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+
+                // Primary FAB for manual input
+                FloatingActionButton(
+                    onClick = {
+                        viewModel.onScanIntent(ScanUiIntent.StartManualEntry(true))
+                        viewModel.onMainIntent(MainUiIntent.NavigateToScan)
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.testTag("add_manual_fab")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Add Manual",
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Add Manual", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                    }
                 }
             }
         }

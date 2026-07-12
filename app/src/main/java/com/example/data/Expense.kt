@@ -10,5 +10,6 @@ data class Expense(
     val amount: Double,
     val date: Long, // timestamp
     val imagePath: String? = null,
-    val isPendingAnalysis: Boolean = false
+    val isPendingAnalysis: Boolean = false,
+    val note: String = ""
 )

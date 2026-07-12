@@ -39,6 +39,7 @@ sealed class Screen {
     data class ShopDetails(val shopName: String) : Screen()
     data class ZoomImage(val imagePath: String, val returnScreen: Screen) : Screen()
     object ScanReceipt : Screen()
+    object Settings : Screen()
 }
 
 data class ShopExpenseSummary(
@@ -56,6 +57,30 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
 
     private val _selectedCurrency = MutableStateFlow(sharedPrefs.getString("preferred_currency", "USD") ?: "USD")
     val selectedCurrency: StateFlow<String> = _selectedCurrency.asStateFlow()
+
+    private val _offlineMode = MutableStateFlow(sharedPrefs.getBoolean("offline_mode", true))
+    val offlineMode: StateFlow<Boolean> = _offlineMode.asStateFlow()
+
+    private val _useAiLowConfidence = MutableStateFlow(sharedPrefs.getBoolean("use_ai_low_confidence", false))
+    val useAiLowConfidence: StateFlow<Boolean> = _useAiLowConfidence.asStateFlow()
+
+    private val _alwaysUseAi = MutableStateFlow(sharedPrefs.getBoolean("always_use_ai", false))
+    val alwaysUseAi: StateFlow<Boolean> = _alwaysUseAi.asStateFlow()
+
+    fun setOfflineMode(enabled: Boolean) {
+        _offlineMode.value = enabled
+        sharedPrefs.edit().putBoolean("offline_mode", enabled).apply()
+    }
+
+    fun setUseAiLowConfidence(enabled: Boolean) {
+        _useAiLowConfidence.value = enabled
+        sharedPrefs.edit().putBoolean("use_ai_low_confidence", enabled).apply()
+    }
+
+    fun setAlwaysUseAi(enabled: Boolean) {
+        _alwaysUseAi.value = enabled
+        sharedPrefs.edit().putBoolean("always_use_ai", enabled).apply()
+    }
 
     fun setCurrency(currencyCode: String) {
         _selectedCurrency.value = currencyCode
@@ -407,24 +432,54 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     fun onScanIntent(intent: ScanUiIntent) {
         when (intent) {
             is ScanUiIntent.SelectImage -> {
-                val isOnline = isNetworkAvailable()
-                _scanUiState.update { 
-                    it.copy(
-                        imagePath = intent.path,
-                        isOffline = !isOnline,
-                        shopName = if (!isOnline) "Offline Receipt (Pending)" else "",
-                        amount = if (!isOnline) "0.00" else ""
-                    ) 
-                }
-                if (isOnline) {
-                    analyzeReceipt(intent.bitmap) { shop, amt, parsedDateLong ->
+                viewModelScope.launch {
+                    _isAnalyzing.value = true
+                    _analysisError.value = null
+                    
+                    _scanUiState.update { 
+                        it.copy(
+                            imagePath = intent.path,
+                            confidenceScore = null,
+                            isConfidenceLow = false,
+                            scannedOffline = false,
+                            scannedWithAi = false
+                        ) 
+                    }
+                    
+                    try {
+                        val result = repository.scanReceipt(
+                            bitmap = intent.bitmap,
+                            offlineMode = _offlineMode.value,
+                            useAiLowConfidence = _useAiLowConfidence.value,
+                            alwaysUseAi = _alwaysUseAi.value,
+                            aiProvider = _aiProvider.value,
+                            geminiApiKey = _geminiApiKey.value,
+                            deepseekApiKey = _deepseekApiKey.value,
+                            openaiApiKey = _openaiApiKey.value,
+                            geminiModel = _geminiModel.value,
+                            deepseekModel = _deepseekModel.value,
+                            openaiModel = _openaiModel.value,
+                            deepseekBaseUrl = _deepseekBaseUrl.value,
+                            openaiBaseUrl = _openaiBaseUrl.value,
+                            fallbackGeminiKey = com.example.BuildConfig.GEMINI_API_KEY
+                        )
+                        
                         _scanUiState.update {
                             it.copy(
-                                shopName = shop ?: "Unknown Shop",
-                                amount = if (amt != null) String.format(Locale.US, "%.2f", amt) else "0.00",
-                                selectedDate = parsedDateLong ?: it.selectedDate
+                                shopName = result.merchant ?: "Unknown Shop",
+                                amount = if (result.amount != null) String.format(Locale.US, "%.2f", result.amount) else "0.00",
+                                selectedDate = result.date ?: it.selectedDate,
+                                confidenceScore = result.confidence,
+                                isConfidenceLow = result.isConfidenceLow,
+                                scannedOffline = result.scannedOffline,
+                                scannedWithAi = result.scannedWithAi,
+                                analysisError = result.error
                             )
                         }
+                    } catch (e: Exception) {
+                        _analysisError.value = "Scanning failed: ${e.message}"
+                    } finally {
+                        _isAnalyzing.value = false
                     }
                 }
             }
@@ -437,6 +492,12 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             is ScanUiIntent.UpdateDate -> {
                 _scanUiState.update { it.copy(selectedDate = intent.date) }
             }
+            is ScanUiIntent.UpdateNote -> {
+                _scanUiState.update { it.copy(note = intent.note) }
+            }
+            is ScanUiIntent.StartManualEntry -> {
+                _scanUiState.update { it.copy(isManualEntry = intent.isManual, imagePath = null) }
+            }
             is ScanUiIntent.ToggleDatePicker -> {
                 _scanUiState.update { it.copy(showDatePicker = intent.show) }
             }
@@ -448,7 +509,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                     amount = amountVal,
                     date = state.selectedDate,
                     imagePath = state.imagePath,
-                    isPendingAnalysis = state.isOffline
+                    isPendingAnalysis = state.isOffline,
+                    note = state.note
                 )
                 // Clear state upon saving
                 _scanUiState.value = ScanUiState()
@@ -738,7 +800,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     // Save expense to database
-    fun saveExpense(shopName: String, amount: Double, date: Long, imagePath: String?, isPendingAnalysis: Boolean = false) {
+    fun saveExpense(shopName: String, amount: Double, date: Long, imagePath: String?, isPendingAnalysis: Boolean = false, note: String = "") {
         viewModelScope.launch {
             repository.insertExpense(
                 Expense(
@@ -746,7 +808,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                     amount = amount,
                     date = date,
                     imagePath = imagePath,
-                    isPendingAnalysis = isPendingAnalysis
+                    isPendingAnalysis = isPendingAnalysis,
+                    note = note
                 )
             )
             _currentScreen.value = Screen.Main

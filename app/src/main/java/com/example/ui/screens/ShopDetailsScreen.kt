@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ImageNotSupported
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -83,6 +84,7 @@ fun ShopDetailsScreen(
         var editShopName by remember(expenseToEdit) { mutableStateOf(expenseToEdit.shopName) }
         var editAmount by remember(expenseToEdit) { mutableStateOf(expenseToEdit.amount.toString()) }
         var editDate by remember(expenseToEdit) { mutableStateOf(expenseToEdit.date) }
+        var editNote by remember(expenseToEdit) { mutableStateOf(expenseToEdit.note) }
         var showDatePicker by remember { mutableStateOf(false) }
 
         if (showDatePicker) {
@@ -149,6 +151,16 @@ fun ShopDetailsScreen(
                             .testTag("edit_dialog_date"),
                         shape = RoundedCornerShape(12.dp)
                     )
+
+                    OutlinedTextField(
+                        value = editNote,
+                        onValueChange = { editNote = it },
+                        label = { Text("Note / Description") },
+                        placeholder = { Text("Add notes or item details...") },
+                        maxLines = 3,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("edit_dialog_note")
+                    )
                 }
             },
             confirmButton = {
@@ -158,7 +170,8 @@ fun ShopDetailsScreen(
                         val updatedExpense = expenseToEdit.copy(
                             shopName = editShopName.ifBlank { expenseToEdit.shopName },
                             amount = amountVal,
-                            date = editDate
+                            date = editDate,
+                            note = editNote
                         )
                         viewModel.onShopDetailsIntent(ShopDetailsUiIntent.UpdateExpense(updatedExpense))
                         editingExpense = null
@@ -352,6 +365,44 @@ fun ExpenseDetailCard(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface
             )
+
+            if (expense.note.isNotBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Notes,
+                                contentDescription = "Note Icon",
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Note",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = expense.note,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
 
             if (scanError != null) {
                 Spacer(modifier = Modifier.height(8.dp))

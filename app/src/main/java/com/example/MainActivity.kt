@@ -15,6 +15,7 @@ import com.example.ui.screens.MainScreen
 import com.example.ui.screens.ShopDetailsScreen
 import com.example.ui.screens.ZoomImageScreen
 import com.example.ui.screens.ScanReceiptScreen
+import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.ExpenseViewModel
 import com.example.ui.viewmodel.Screen
@@ -46,6 +47,9 @@ class MainActivity : ComponentActivity() {
                             }
                             is Screen.ScanReceipt -> {
                                 ScanReceiptScreen(viewModel = viewModel)
+                            }
+                            is Screen.Settings -> {
+                                SettingsScreen(viewModel = viewModel)
                             }
                         }
                     }
