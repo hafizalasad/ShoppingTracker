@@ -303,6 +303,28 @@ class ExpenseViewModel @JvmOverloads constructor(
         }
     }
 
+    fun handleBackNavigationFromScan() {
+        val state = _scanUiState.value
+        val hasData = state.imagePath != null ||
+                state.shopName.isNotBlank() ||
+                state.amount.isNotBlank() ||
+                state.note.isNotBlank()
+
+        if (hasData) {
+            val amountVal = state.amount.toDoubleOrNull() ?: 0.0
+            saveExpense(
+                shopName = state.shopName.ifBlank { "Offline Receipt" },
+                amount = amountVal,
+                date = state.selectedDate,
+                imagePath = state.imagePath,
+                isPendingAnalysis = false,
+                note = state.note
+            )
+            _scanUiState.value = ScanUiState()
+        }
+        navigateTo(Screen.Main)
+    }
+
     // Unified MVI State and Intent processor for Shop Details Screen
     fun getShopDetailsUiState(shopName: String): StateFlow<ShopDetailsUiState> {
         return expensesInRange

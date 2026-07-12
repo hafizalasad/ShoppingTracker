@@ -87,7 +87,7 @@ fun ScanReceiptScreen(
     val state by viewModel.scanUiState.collectAsState()
 
     BackHandler(enabled = true) {
-        viewModel.navigateTo(Screen.Main)
+        viewModel.handleBackNavigationFromScan()
     }
 
     // Setup temp file for camera capture
@@ -135,7 +135,7 @@ fun ScanReceiptScreen(
             TopAppBar(
                 title = { Text("Scan Receipt", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = { viewModel.navigateTo(Screen.Main) }) {
+                    IconButton(onClick = { viewModel.handleBackNavigationFromScan() }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
