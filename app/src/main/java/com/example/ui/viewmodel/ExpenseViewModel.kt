@@ -45,7 +45,8 @@ sealed class Screen {
 data class ShopExpenseSummary(
     val shopName: String,
     val totalAmount: Double,
-    val expenseCount: Int
+    val expenseCount: Int,
+    val latestDate: Long = 0L
 )
 
 class ExpenseViewModel(application: Application) : AndroidViewModel(application) {
@@ -385,12 +386,14 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     ) { list ->
         list[0].groupBy { it.shopName.trim() }
             .map { (shopName, expenses) ->
+                val latestDate = expenses.maxOfOrNull { it.date } ?: 0L
                 ShopExpenseSummary(
                     shopName = shopName,
                     totalAmount = expenses.sumOf { it.amount },
-                    expenseCount = expenses.size
+                    expenseCount = expenses.size,
+                    latestDate = latestDate
                 )
-            }.sortedByDescending { it.totalAmount }
+            }.sortedByDescending { it.latestDate }
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),

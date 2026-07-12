@@ -610,7 +610,8 @@ fun ShopSummaryRow(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "${summary.expenseCount} receipt${if (summary.expenseCount > 1) "s" else ""}",
+                        text = "${summary.expenseCount} receipt${if (summary.expenseCount > 1) "s" else ""}" +
+                                if (summary.latestDate > 0L) " • ${SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(summary.latestDate))}" else "",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
