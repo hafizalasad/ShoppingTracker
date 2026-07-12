@@ -11,14 +11,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.ui.screens.MainScreen
-import com.example.ui.screens.ShopDetailsScreen
-import com.example.ui.screens.ZoomImageScreen
-import com.example.ui.screens.ScanReceiptScreen
-import com.example.ui.screens.SettingsScreen
+import com.example.presentation.screen.MainScreen
+import com.example.presentation.screen.ScanReceiptScreen
+import com.example.presentation.screen.SettingsScreen
+import com.example.presentation.screen.ShopDetailsScreen
+import com.example.presentation.screen.ZoomImageScreen
+import com.example.presentation.viewmodel.ExpenseViewModel
+import com.example.presentation.viewmodel.Screen
 import com.example.ui.theme.MyApplicationTheme
-import com.example.ui.viewmodel.ExpenseViewModel
-import com.example.ui.viewmodel.Screen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
