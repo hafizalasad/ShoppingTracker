@@ -32,7 +32,21 @@ import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
-import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.filled.BookmarkAdd
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import com.example.presentation.viewmodel.SavedDateFilter
+import java.util.Calendar
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DatePickerDialog
@@ -84,8 +98,11 @@ fun MainScreen(
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.mainUiState.collectAsState()
+    val savedCustomFilters by viewModel.savedDateFilters.collectAsState()
 
     var showDatePicker by remember { mutableStateOf(false) }
+    var showSaveFilterDialog by remember { mutableStateOf(false) }
+    var filterNameInput by remember { mutableStateOf("") }
     var currencyMenuExpanded by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) } // 0 = Expenses, 1 = Insights/Charts
 
@@ -186,8 +203,7 @@ fun MainScreen(
                 // Secondary FAB for scanning receipt
                 FloatingActionButton(
                     onClick = {
-                        viewModel.onScanIntent(ScanUiIntent.StartManualEntry(false))
-                        viewModel.onMainIntent(MainUiIntent.NavigateToScan)
+                        viewModel.openGeneralScan(isManual = false)
                     },
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
                     contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -211,8 +227,7 @@ fun MainScreen(
                 // Primary FAB for manual input
                 FloatingActionButton(
                     onClick = {
-                        viewModel.onScanIntent(ScanUiIntent.StartManualEntry(true))
-                        viewModel.onMainIntent(MainUiIntent.NavigateToScan)
+                        viewModel.openGeneralScan(isManual = true)
                     },
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -342,6 +357,106 @@ fun MainScreen(
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Saved Date Filter Chips (Presets + User Saved Filters)
+                    val nowMs = remember { System.currentTimeMillis() }
+                    val cal = remember {
+                        Calendar.getInstance().apply {
+                            set(Calendar.DAY_OF_MONTH, 1)
+                            set(Calendar.HOUR_OF_DAY, 0)
+                            set(Calendar.MINUTE, 0)
+                            set(Calendar.SECOND, 0)
+                            set(Calendar.MILLISECOND, 0)
+                        }
+                    }
+                    val startOfMonthMs = cal.timeInMillis
+
+                    val yearCal = remember {
+                        Calendar.getInstance().apply {
+                            set(Calendar.DAY_OF_YEAR, 1)
+                            set(Calendar.HOUR_OF_DAY, 0)
+                            set(Calendar.MINUTE, 0)
+                            set(Calendar.SECOND, 0)
+                            set(Calendar.MILLISECOND, 0)
+                        }
+                    }
+                    val startOfYearMs = yearCal.timeInMillis
+
+                    val last7DaysMs = nowMs - (7L * 24 * 60 * 60 * 1000)
+                    val last30DaysMs = nowMs - (30L * 24 * 60 * 60 * 1000)
+
+                    val presetFilters = remember(startOfMonthMs, startOfYearMs, nowMs) {
+                        listOf(
+                            SavedDateFilter("preset_month", "This Month", startOfMonthMs, nowMs, isCustom = false),
+                            SavedDateFilter("preset_7d", "Last 7 Days", last7DaysMs, nowMs, isCustom = false),
+                            SavedDateFilter("preset_30d", "Last 30 Days", last30DaysMs, nowMs, isCustom = false),
+                            SavedDateFilter("preset_year", "This Year", startOfYearMs, nowMs, isCustom = false)
+                        )
+                    }
+
+                    val allFilters = presetFilters + savedCustomFilters
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        allFilters.forEach { filter ->
+                            val isSelected = (state.startDate == filter.startDate && state.endDate == filter.endDate)
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    viewModel.onMainIntent(MainUiIntent.SetDateRange(filter.startDate, filter.endDate))
+                                },
+                                label = {
+                                    Text(
+                                        text = filter.name,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        fontSize = 12.sp
+                                    )
+                                },
+                                trailingIcon = {
+                                    if (filter.isCustom) {
+                                        IconButton(
+                                            onClick = { viewModel.deleteSavedDateFilter(filter.id) },
+                                            modifier = Modifier.size(16.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Remove Saved Filter",
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                        }
+                                    }
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.testTag("date_filter_chip_${filter.id}")
+                            )
+                        }
+
+                        AssistChip(
+                            onClick = { showSaveFilterDialog = true },
+                            label = { Text("Save Active Filter", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.BookmarkAdd,
+                                    contentDescription = "Save Preset",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.testTag("save_date_filter_chip")
+                        )
+                    }
                 }
             }
 
@@ -433,16 +548,110 @@ fun MainScreen(
                                 .fillMaxSize()
                                 .padding(horizontal = 20.dp)
                         ) {
-                            Text(
-                                text = "Spent by Shop",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.padding(bottom = 12.dp, top = 4.dp)
+                            // Search Shop Field
+                            OutlinedTextField(
+                                value = state.searchQuery,
+                                onValueChange = { viewModel.onMainIntent(MainUiIntent.SetSearchQuery(it)) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 8.dp)
+                                    .testTag("search_shop_input"),
+                                placeholder = { Text("Search shop by name...") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = "Search Shop",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                trailingIcon = {
+                                    if (state.searchQuery.isNotEmpty()) {
+                                        IconButton(
+                                            onClick = { viewModel.onMainIntent(MainUiIntent.SetSearchQuery("")) },
+                                            modifier = Modifier.testTag("clear_shop_search")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Clear Search",
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(16.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                    focusedContainerColor = MaterialTheme.colorScheme.surface
+                                )
                             )
 
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 12.dp, top = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (state.searchQuery.isBlank()) "Spent by Shop" else "Search Results",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                if (state.searchQuery.isNotBlank()) {
+                                    Text(
+                                        text = "${state.shopSummaries.size} shop(s) found",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+
                             if (state.shopSummaries.isEmpty()) {
-                                EmptyStateView()
+                                if (state.searchQuery.isNotBlank()) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 32.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Storefront,
+                                            contentDescription = "No Shop Found",
+                                            modifier = Modifier.size(64.dp),
+                                            tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                                        )
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Text(
+                                            text = "No shops found matching \"${state.searchQuery}\"",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "Try searching for another shop name or adjust your date filter.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.outline,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        OutlinedButton(
+                                            onClick = { viewModel.onMainIntent(MainUiIntent.SetSearchQuery("")) },
+                                            shape = RoundedCornerShape(12.dp)
+                                        ) {
+                                            Text("Clear Search")
+                                        }
+                                    }
+                                } else {
+                                    EmptyStateView()
+                                }
                             } else {
                                 LazyColumn(
                                     modifier = Modifier.fillMaxSize(),
@@ -503,6 +712,51 @@ fun MainScreen(
             onDismiss = { showDatePicker = false },
             onDateRangeSelected = { start, end ->
                 viewModel.onMainIntent(MainUiIntent.SetDateRange(start, end))
+            }
+        )
+    }
+
+    if (showSaveFilterDialog) {
+        AlertDialog(
+            onDismissRequest = { showSaveFilterDialog = false },
+            title = { Text("Save Date Filter Preset") },
+            text = {
+                Column {
+                    Text(
+                        text = "Save active date filter (${DateFormatter.formatDate(state.startDate)} - ${DateFormatter.formatDate(state.endDate)}) as a quick preset button:",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = filterNameInput,
+                        onValueChange = { filterNameInput = it },
+                        label = { Text("Preset Name") },
+                        placeholder = { Text("e.g. Q1 Expenses, Project Alpha") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("filter_name_input")
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (filterNameInput.isNotBlank()) {
+                            viewModel.saveCustomDateFilter(filterNameInput, state.startDate, state.endDate)
+                        }
+                        showSaveFilterDialog = false
+                        filterNameInput = ""
+                    },
+                    modifier = Modifier.testTag("save_filter_confirm_button")
+                ) {
+                    Text("Save Preset", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showSaveFilterDialog = false }) {
+                    Text("Cancel")
+                }
             }
         )
     }
@@ -614,7 +868,7 @@ fun ShopSummaryRow(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Icon(
-                    imageVector = Icons.Outlined.ChevronRight,
+                    imageVector = Icons.Default.ChevronRight,
                     contentDescription = "Go to Details",
                     tint = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.size(20.dp)

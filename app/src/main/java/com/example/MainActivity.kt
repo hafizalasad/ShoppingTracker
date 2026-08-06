@@ -2,6 +2,7 @@ package com.example
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
@@ -28,6 +29,20 @@ class MainActivity : ComponentActivity() {
             MyApplicationTheme {
                 val viewModel: ExpenseViewModel = viewModel()
                 val currentScreen by viewModel.currentScreen.collectAsState()
+
+                BackHandler(enabled = currentScreen != Screen.Main) {
+                    when (val screen = currentScreen) {
+                        is Screen.ZoomImage -> {
+                            viewModel.navigateTo(screen.returnScreen)
+                        }
+                        Screen.ScanReceipt -> {
+                            viewModel.handleBackNavigationFromScan()
+                        }
+                        else -> {
+                            viewModel.navigateTo(Screen.Main)
+                        }
+                    }
+                }
 
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Crossfade(targetState = currentScreen, label = "screen_transition") { screen ->

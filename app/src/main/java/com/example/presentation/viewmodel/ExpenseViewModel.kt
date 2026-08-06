@@ -35,6 +35,20 @@ import java.io.File
 import java.util.Calendar
 import java.util.Locale
 
+import com.example.data.backup.BackupResult
+import com.example.data.backup.DriveBackupManager
+import com.google.android.gms.auth.api.signin.GoogleSignInAccount
+import org.json.JSONArray
+import org.json.JSONObject
+
+data class SavedDateFilter(
+    val id: String,
+    val name: String,
+    val startDate: Long,
+    val endDate: Long,
+    val isCustom: Boolean = true
+)
+
 sealed class Screen {
     object Main : Screen()
     data class ShopDetails(val shopName: String) : Screen()
@@ -107,6 +121,152 @@ class ExpenseViewModel @JvmOverloads constructor(
         _endDate.value = end
     }
 
+    // Saved Date Filters State & Management
+    private val _savedDateFilters = MutableStateFlow<List<SavedDateFilter>>(emptyList())
+    val savedDateFilters: StateFlow<List<SavedDateFilter>> = _savedDateFilters.asStateFlow()
+
+    init {
+        loadSavedDateFilters()
+    }
+
+    private fun loadSavedDateFilters() {
+        val json = sharedPrefs.getString("saved_date_filters_v1", null)
+        val list = mutableListOf<SavedDateFilter>()
+        if (json != null) {
+            try {
+                val array = JSONArray(json)
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    list.add(
+                        SavedDateFilter(
+                            id = obj.getString("id"),
+                            name = obj.getString("name"),
+                            startDate = obj.getLong("startDate"),
+                            endDate = obj.getLong("endDate"),
+                            isCustom = true
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        _savedDateFilters.value = list
+    }
+
+    fun saveCustomDateFilter(name: String, startDate: Long, endDate: Long) {
+        val filterName = name.ifBlank { "Custom Filter" }
+        val newFilter = SavedDateFilter(
+            id = System.currentTimeMillis().toString(),
+            name = filterName,
+            startDate = startDate,
+            endDate = endDate,
+            isCustom = true
+        )
+        val current = _savedDateFilters.value.toMutableList()
+        current.add(newFilter)
+        _savedDateFilters.value = current
+        persistSavedDateFilters(current)
+    }
+
+    fun deleteSavedDateFilter(id: String) {
+        val updated = _savedDateFilters.value.filter { it.id != id }
+        _savedDateFilters.value = updated
+        persistSavedDateFilters(updated)
+    }
+
+    private fun persistSavedDateFilters(list: List<SavedDateFilter>) {
+        val array = JSONArray()
+        for (item in list) {
+            val obj = JSONObject()
+            obj.put("id", item.id)
+            obj.put("name", item.name)
+            obj.put("startDate", item.startDate)
+            obj.put("endDate", item.endDate)
+            array.put(obj)
+        }
+        sharedPrefs.edit().putString("saved_date_filters_v1", array.toString()).apply()
+    }
+
+    // Google Drive Sync & Backup State Management
+    val driveBackupManager by lazy { DriveBackupManager(getApplication()) }
+
+    private val _backupStatusMessage = MutableStateFlow<String?>(null)
+    val backupStatusMessage: StateFlow<String?> = _backupStatusMessage.asStateFlow()
+
+    private val _isBackupInProgress = MutableStateFlow(false)
+    val isBackupInProgress: StateFlow<Boolean> = _isBackupInProgress.asStateFlow()
+
+    private val _lastBackupTime = MutableStateFlow<Long?>(
+        sharedPrefs.getLong("last_backup_timestamp", 0L).takeIf { it > 0L }
+    )
+    val lastBackupTime: StateFlow<Long?> = _lastBackupTime.asStateFlow()
+
+    fun clearBackupStatus() {
+        _backupStatusMessage.value = null
+    }
+
+    fun backupToDrive(account: GoogleSignInAccount) {
+        viewModelScope.launch {
+            _isBackupInProgress.value = true
+            _backupStatusMessage.value = "Uploading expense backup to your Google Drive..."
+            val result = driveBackupManager.backupToDrive(account)
+            _isBackupInProgress.value = false
+            when (result) {
+                is BackupResult.Success -> {
+                    val now = System.currentTimeMillis()
+                    _lastBackupTime.value = now
+                    sharedPrefs.edit().putLong("last_backup_timestamp", now).apply()
+                    _backupStatusMessage.value = result.message
+                }
+                is BackupResult.Error -> {
+                    _backupStatusMessage.value = result.message
+                }
+            }
+        }
+    }
+
+    fun restoreFromDrive(account: GoogleSignInAccount) {
+        viewModelScope.launch {
+            _isBackupInProgress.value = true
+            _backupStatusMessage.value = "Restoring expenses from your Google Drive..."
+            val result = driveBackupManager.restoreFromDrive(account)
+            _isBackupInProgress.value = false
+            when (result) {
+                is BackupResult.Success -> {
+                    _backupStatusMessage.value = result.message
+                }
+                is BackupResult.Error -> {
+                    _backupStatusMessage.value = result.message
+                }
+            }
+        }
+    }
+
+    fun exportLocalBackup(onSuccess: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val json = driveBackupManager.exportToJsonString()
+                onSuccess(json)
+                _backupStatusMessage.value = "Local JSON backup copied/ready for export."
+            } catch (e: Exception) {
+                _backupStatusMessage.value = "Failed to export backup: ${e.message}"
+            }
+        }
+    }
+
+    fun importLocalBackup(jsonString: String) {
+        viewModelScope.launch {
+            _isBackupInProgress.value = true
+            val result = driveBackupManager.importFromJsonString(jsonString)
+            _isBackupInProgress.value = false
+            when (result) {
+                is BackupResult.Success -> _backupStatusMessage.value = result.message
+                is BackupResult.Error -> _backupStatusMessage.value = result.message
+            }
+        }
+    }
+
     // Dynamic filtering of expenses in date range
     @OptIn(ExperimentalCoroutinesApi::class)
     val expensesInRange: StateFlow<List<Expense>> = combine(
@@ -155,22 +315,45 @@ class ExpenseViewModel @JvmOverloads constructor(
         initialValue = emptyList()
     )
 
+    // Search query state for filtering shops
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    private val _dateRange = combine(_startDate, _endDate) { start, end -> start to end }
+
     // Unified MVI State Flow for Main Screen
     val mainUiState: StateFlow<MainUiState> = combine(
+        _dateRange,
         shopSummaries,
         expensesInRange,
-        _startDate,
-        _endDate,
-        _selectedCurrency
-    ) { summaries, expenses, start, end, currency ->
+        _selectedCurrency,
+        _searchQuery
+    ) { (start, end), summaries, expenses, currency, query ->
+        val filteredSummaries = if (query.isBlank()) {
+            summaries
+        } else {
+            summaries.filter { it.shopName.contains(query, ignoreCase = true) }
+        }
+
+        val filteredExpenses = if (query.isBlank()) {
+            expenses
+        } else {
+            expenses.filter { it.shopName.contains(query, ignoreCase = true) }
+        }
+
         MainUiState(
-            shopSummaries = summaries,
-            expensesInRange = expenses,
+            shopSummaries = filteredSummaries,
+            expensesInRange = filteredExpenses,
             startDate = start,
             endDate = end,
             selectedCurrency = currency,
             currencySymbol = getCurrencySymbol(currency),
-            totalSpent = summaries.sumOf { it.totalAmount }
+            totalSpent = filteredSummaries.sumOf { it.totalAmount },
+            searchQuery = query
         )
     }.stateIn(
         scope = viewModelScope,
@@ -220,11 +403,35 @@ class ExpenseViewModel @JvmOverloads constructor(
         }
     }
 
+    fun openGeneralScan(isManual: Boolean = false) {
+        _scanUiState.value = ScanUiState(
+            shopName = "",
+            isShopNameLocked = false,
+            selectedDate = System.currentTimeMillis(),
+            isManualEntry = isManual
+        )
+        navigateTo(Screen.ScanReceipt)
+    }
+
+    fun startAddExpenseForShop(shopName: String) {
+        _scanUiState.value = ScanUiState(
+            shopName = shopName,
+            isShopNameLocked = true,
+            selectedDate = System.currentTimeMillis(),
+            isManualEntry = true
+        )
+        navigateTo(Screen.ScanReceipt)
+    }
+
     fun onMainIntent(intent: MainUiIntent) {
         when (intent) {
             is MainUiIntent.SetDateRange -> setDateRange(intent.start, intent.end)
             is MainUiIntent.SetCurrency -> setCurrency(intent.currencyCode)
-            is MainUiIntent.NavigateToScan -> navigateTo(Screen.ScanReceipt)
+            is MainUiIntent.SetSearchQuery -> setSearchQuery(intent.query)
+            is MainUiIntent.NavigateToScan -> {
+                val currentIsManual = _scanUiState.value.isManualEntry
+                openGeneralScan(isManual = currentIsManual)
+            }
             is MainUiIntent.NavigateToShopDetails -> navigateTo(Screen.ShopDetails(intent.shopName))
         }
     }
@@ -245,11 +452,11 @@ class ExpenseViewModel @JvmOverloads constructor(
                     
                     try {
                         val result = scanReceiptUseCase(intent.bitmap)
-                        _scanUiState.update {
-                            it.copy(
-                                shopName = result.merchant ?: "Unknown Shop",
+                        _scanUiState.update { current ->
+                            current.copy(
+                                shopName = if (current.isShopNameLocked) current.shopName else (result.merchant ?: "Unknown Shop"),
                                 amount = if (result.amount != null) String.format(Locale.US, "%.2f", result.amount) else "0.00",
-                                selectedDate = result.date ?: it.selectedDate,
+                                selectedDate = result.date ?: current.selectedDate,
                                 confidenceScore = result.confidence,
                                 isConfidenceLow = result.isConfidenceLow,
                                 analysisError = result.error,
@@ -267,7 +474,9 @@ class ExpenseViewModel @JvmOverloads constructor(
                 }
             }
             is ScanUiIntent.UpdateShopName -> {
-                _scanUiState.update { it.copy(shopName = intent.name) }
+                _scanUiState.update { 
+                    if (it.isShopNameLocked) it else it.copy(shopName = intent.name) 
+                }
             }
             is ScanUiIntent.UpdateAmount -> {
                 _scanUiState.update { it.copy(amount = intent.amount) }
@@ -279,7 +488,13 @@ class ExpenseViewModel @JvmOverloads constructor(
                 _scanUiState.update { it.copy(note = intent.note) }
             }
             is ScanUiIntent.StartManualEntry -> {
-                _scanUiState.update { it.copy(isManualEntry = intent.isManual, imagePath = null) }
+                _scanUiState.update { 
+                    it.copy(
+                        isManualEntry = intent.isManual, 
+                        imagePath = null,
+                        selectedDate = System.currentTimeMillis()
+                    ) 
+                }
             }
             is ScanUiIntent.ToggleDatePicker -> {
                 _scanUiState.update { it.copy(showDatePicker = intent.show) }
@@ -287,6 +502,7 @@ class ExpenseViewModel @JvmOverloads constructor(
             is ScanUiIntent.SaveExpense -> {
                 val state = _scanUiState.value
                 val amountVal = state.amount.toDoubleOrNull() ?: 0.0
+                val targetShopName = if (state.isShopNameLocked) state.shopName else null
                 saveExpense(
                     shopName = state.shopName.ifBlank { "Offline Receipt" },
                     amount = amountVal,
@@ -296,17 +512,36 @@ class ExpenseViewModel @JvmOverloads constructor(
                     note = state.note
                 )
                 _scanUiState.value = ScanUiState()
+                if (targetShopName != null) {
+                    navigateTo(Screen.ShopDetails(targetShopName))
+                } else {
+                    navigateTo(Screen.Main)
+                }
             }
             is ScanUiIntent.ResetScan -> {
-                _scanUiState.value = ScanUiState()
+                val state = _scanUiState.value
+                if (state.isShopNameLocked) {
+                    _scanUiState.value = ScanUiState(
+                        shopName = state.shopName,
+                        isShopNameLocked = true,
+                        isManualEntry = true,
+                        selectedDate = System.currentTimeMillis()
+                    )
+                } else {
+                    _scanUiState.value = ScanUiState(
+                        isManualEntry = state.isManualEntry,
+                        selectedDate = System.currentTimeMillis()
+                    )
+                }
             }
         }
     }
 
     fun handleBackNavigationFromScan() {
         val state = _scanUiState.value
+        val targetShopName = if (state.isShopNameLocked) state.shopName else null
         val hasData = state.imagePath != null ||
-                state.shopName.isNotBlank() ||
+                (state.shopName.isNotBlank() && !state.isShopNameLocked) ||
                 state.amount.isNotBlank() ||
                 state.note.isNotBlank()
 
@@ -320,9 +555,13 @@ class ExpenseViewModel @JvmOverloads constructor(
                 isPendingAnalysis = false,
                 note = state.note
             )
-            _scanUiState.value = ScanUiState()
         }
-        navigateTo(Screen.Main)
+        _scanUiState.value = ScanUiState()
+        if (targetShopName != null) {
+            navigateTo(Screen.ShopDetails(targetShopName))
+        } else {
+            navigateTo(Screen.Main)
+        }
     }
 
     // Unified MVI State and Intent processor for Shop Details Screen

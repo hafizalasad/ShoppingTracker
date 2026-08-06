@@ -34,9 +34,16 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -133,7 +140,7 @@ fun ScanReceiptScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Scan Receipt", fontWeight = FontWeight.Bold) },
+                title = { Text(if (state.isManualEntry) "Add Expense" else "Scan Receipt", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = { viewModel.handleBackNavigationFromScan() }) {
                         Icon(
@@ -289,19 +296,52 @@ fun ScanReceiptScreen(
                         val file = File(state.imagePath!!)
                         if (file.exists()) {
                             Card(
+                                onClick = {
+                                    viewModel.navigateTo(Screen.ZoomImage(state.imagePath!!, Screen.ScanReceipt))
+                                },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(200.dp)
+                                    .height(220.dp)
                                     .clip(RoundedCornerShape(16.dp))
                                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)),
                                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                             ) {
-                                AsyncImage(
-                                    model = file,
-                                    contentDescription = "Receipt Preview",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                                Box(modifier = Modifier.fillMaxSize()) {
+                                    AsyncImage(
+                                        model = file,
+                                        contentDescription = "Receipt Preview - Tap to zoom",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    
+                                    // Zoom Overlay Badge
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                                        shape = RoundedCornerShape(20.dp),
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(12.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.ZoomIn,
+                                                contentDescription = "Zoom Image",
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Tap to Zoom",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     } else {
@@ -466,15 +506,29 @@ fun ScanReceiptScreen(
                     // Form Field: Shop Name
                     OutlinedTextField(
                         value = state.shopName,
-                        onValueChange = { viewModel.onScanIntent(ScanUiIntent.UpdateShopName(it)) },
-                        label = { Text("Shop Name") },
+                        onValueChange = { 
+                            if (!state.isShopNameLocked) {
+                                viewModel.onScanIntent(ScanUiIntent.UpdateShopName(it)) 
+                            }
+                        },
+                        readOnly = state.isShopNameLocked,
+                        label = { Text(if (state.isShopNameLocked) "Shop Name (Locked)" else "Shop Name") },
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Default.CheckCircle,
+                                imageVector = if (state.isShopNameLocked) Icons.Default.Lock else Icons.Default.Storefront,
                                 contentDescription = "Shop Name",
-                                tint = MaterialTheme.colorScheme.primary
+                                tint = if (state.isShopNameLocked) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
                             )
                         },
+                        supportingText = if (state.isShopNameLocked) {
+                            {
+                                Text(
+                                    text = "Locked to '${state.shopName}' when adding from shop list.",
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        } else null,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("shop_name_input"),
@@ -507,26 +561,51 @@ fun ScanReceiptScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Form Field: Date
-                    OutlinedTextField(
-                        value = DateFormatter.formatDate(state.selectedDate),
-                        onValueChange = {},
-                        label = { Text("Date of Purchase") },
-                        leadingIcon = {
-                            IconButton(onClick = { viewModel.onScanIntent(ScanUiIntent.ToggleDatePicker(true)) }) {
-                                Icon(
-                                    imageVector = Icons.Default.CalendarMonth,
-                                    contentDescription = "Select Date"
-                                )
-                            }
-                        },
-                        readOnly = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { viewModel.onScanIntent(ScanUiIntent.ToggleDatePicker(true)) }
-                            .testTag("date_input"),
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                    // Form Field: Date with quick "Today" button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = DateFormatter.formatDate(state.selectedDate),
+                            onValueChange = {},
+                            label = { Text("Date of Purchase") },
+                            leadingIcon = {
+                                IconButton(onClick = { viewModel.onScanIntent(ScanUiIntent.ToggleDatePicker(true)) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.CalendarMonth,
+                                        contentDescription = "Select Date"
+                                    )
+                                }
+                            },
+                            readOnly = true,
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { viewModel.onScanIntent(ScanUiIntent.ToggleDatePicker(true)) }
+                                .testTag("date_input"),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        FilledTonalButton(
+                            onClick = {
+                                viewModel.onScanIntent(ScanUiIntent.UpdateDate(System.currentTimeMillis()))
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .height(56.dp)
+                                .testTag("today_date_button"),
+                            contentPadding = PaddingValues(horizontal = 14.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Today,
+                                contentDescription = "Set Today's Date",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(text = "Today", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 

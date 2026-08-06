@@ -16,5 +16,6 @@ data class MainUiState(
     val endDate: Long = 0L,
     val selectedCurrency: String = "USD",
     val currencySymbol: String = "$",
-    val totalSpent: Double = 0.0
+    val totalSpent: Double = 0.0,
+    val searchQuery: String = ""
 )

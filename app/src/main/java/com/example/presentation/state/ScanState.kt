@@ -14,5 +14,6 @@ data class ScanUiState(
     val confidenceScore: Int? = null,
     val isConfidenceLow: Boolean = false,
     val scannedOffline: Boolean = true,
-    val scannedWithAi: Boolean = false
+    val scannedWithAi: Boolean = false,
+    val isShopNameLocked: Boolean = false
 )
