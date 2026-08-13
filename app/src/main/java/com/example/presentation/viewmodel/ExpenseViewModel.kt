@@ -46,7 +46,9 @@ data class SavedDateFilter(
     val name: String,
     val startDate: Long,
     val endDate: Long,
-    val isCustom: Boolean = true
+    val isCustom: Boolean = true,
+    val startDay: Int? = null,
+    val endDay: Int? = null
 )
 
 sealed class Screen {
@@ -129,6 +131,47 @@ class ExpenseViewModel @JvmOverloads constructor(
         loadSavedDateFilters()
     }
 
+    fun calculateMonthlyCycleDates(startDay: Int, endDay: Int, refTimeMs: Long = System.currentTimeMillis()): Pair<Long, Long> {
+        val cal = Calendar.getInstance().apply { timeInMillis = refTimeMs }
+        val currentDay = cal.get(Calendar.DAY_OF_MONTH)
+
+        val startCal = Calendar.getInstance().apply {
+            timeInMillis = refTimeMs
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+
+        val endCal = Calendar.getInstance().apply {
+            timeInMillis = refTimeMs
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }
+
+        if (currentDay < startDay) {
+            // We are currently in the cycle that started last month
+            startCal.add(Calendar.MONTH, -1)
+            val maxDayStart = startCal.getActualMaximum(Calendar.DAY_OF_MONTH)
+            startCal.set(Calendar.DAY_OF_MONTH, startDay.coerceIn(1, maxDayStart))
+
+            val maxDayEnd = endCal.getActualMaximum(Calendar.DAY_OF_MONTH)
+            endCal.set(Calendar.DAY_OF_MONTH, endDay.coerceIn(1, maxDayEnd))
+        } else {
+            // We are currently in the cycle that started this month
+            val maxDayStart = startCal.getActualMaximum(Calendar.DAY_OF_MONTH)
+            startCal.set(Calendar.DAY_OF_MONTH, startDay.coerceIn(1, maxDayStart))
+
+            endCal.add(Calendar.MONTH, 1)
+            val maxDayEnd = endCal.getActualMaximum(Calendar.DAY_OF_MONTH)
+            endCal.set(Calendar.DAY_OF_MONTH, endDay.coerceIn(1, maxDayEnd))
+        }
+
+        return Pair(startCal.timeInMillis, endCal.timeInMillis)
+    }
+
     private fun loadSavedDateFilters() {
         val json = sharedPrefs.getString("saved_date_filters_v1", null)
         val list = mutableListOf<SavedDateFilter>()
@@ -137,13 +180,24 @@ class ExpenseViewModel @JvmOverloads constructor(
                 val array = JSONArray(json)
                 for (i in 0 until array.length()) {
                     val obj = array.getJSONObject(i)
+                    val startDay = if (obj.has("startDay")) obj.getInt("startDay") else null
+                    val endDay = if (obj.has("endDay")) obj.getInt("endDay") else null
+
+                    val (sDate, eDate) = if (startDay != null && endDay != null) {
+                        calculateMonthlyCycleDates(startDay, endDay)
+                    } else {
+                        Pair(obj.getLong("startDate"), obj.getLong("endDate"))
+                    }
+
                     list.add(
                         SavedDateFilter(
                             id = obj.getString("id"),
                             name = obj.getString("name"),
-                            startDate = obj.getLong("startDate"),
-                            endDate = obj.getLong("endDate"),
-                            isCustom = true
+                            startDate = sDate,
+                            endDate = eDate,
+                            isCustom = true,
+                            startDay = startDay,
+                            endDay = endDay
                         )
                     )
                 }
@@ -169,6 +223,25 @@ class ExpenseViewModel @JvmOverloads constructor(
         persistSavedDateFilters(current)
     }
 
+    fun saveMonthlyCycleFilter(name: String, startDay: Int, endDay: Int) {
+        val (sDate, eDate) = calculateMonthlyCycleDates(startDay, endDay)
+        val defaultName = "Monthly Cycle ($startDay-$endDay)"
+        val filterName = name.ifBlank { defaultName }
+        val newFilter = SavedDateFilter(
+            id = System.currentTimeMillis().toString(),
+            name = filterName,
+            startDate = sDate,
+            endDate = eDate,
+            isCustom = true,
+            startDay = startDay,
+            endDay = endDay
+        )
+        val current = _savedDateFilters.value.toMutableList()
+        current.add(newFilter)
+        _savedDateFilters.value = current
+        persistSavedDateFilters(current)
+    }
+
     fun deleteSavedDateFilter(id: String) {
         val updated = _savedDateFilters.value.filter { it.id != id }
         _savedDateFilters.value = updated
@@ -183,6 +256,8 @@ class ExpenseViewModel @JvmOverloads constructor(
             obj.put("name", item.name)
             obj.put("startDate", item.startDate)
             obj.put("endDate", item.endDate)
+            item.startDay?.let { obj.put("startDay", it) }
+            item.endDay?.let { obj.put("endDay", it) }
             array.put(obj)
         }
         sharedPrefs.edit().putString("saved_date_filters_v1", array.toString()).apply()

@@ -47,6 +47,12 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.Update
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilterChip
@@ -117,33 +123,13 @@ fun MainScreen(
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showSaveFilterDialog by remember { mutableStateOf(false) }
+    var showMonthlyCycleDialog by remember { mutableStateOf(false) }
     var filterNameInput by remember { mutableStateOf("") }
     var currencyMenuExpanded by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) } // 0 = Expenses, 1 = Insights/Charts
 
     val listState = rememberLazyListState()
-    var isHeaderVisible by remember { mutableStateOf(true) }
-
-    // Always restore header when user scrolls back to top
-    LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
-        if (listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0) {
-            isHeaderVisible = true
-        }
-    }
-
-    val nestedScrollConnection = remember {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                val delta = available.y
-                if (delta < -15f && isHeaderVisible) {
-                    isHeaderVisible = false
-                } else if (delta > 15f && !isHeaderVisible) {
-                    isHeaderVisible = true
-                }
-                return Offset.Zero
-            }
-        }
-    }
+    var isListExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -294,11 +280,10 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
-                .nestedScroll(nestedScrollConnection)
         ) {
-            // Hero Total Spent Display Card (Collapsible on Scroll)
+            // Hero Total Spent Display Card (Hidden when isListExpanded = true)
             AnimatedVisibility(
-                visible = isHeaderVisible,
+                visible = !isListExpanded,
                 enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
                 exit = shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
             ) {
@@ -336,18 +321,42 @@ fun MainScreen(
                                     color = MaterialTheme.colorScheme.primary
                                 )
                             }
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.TrendingUp,
-                                contentDescription = "Trends",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .background(
-                                        MaterialTheme.colorScheme.primaryContainer,
-                                        CircleShape
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Manual Expand Icon to maximize list UI
+                                IconButton(
+                                    onClick = { isListExpanded = true },
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .background(
+                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                                            CircleShape
+                                        )
+                                        .testTag("expand_list_ui_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Fullscreen,
+                                        contentDescription = "Expand Full List UI",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(22.dp)
                                     )
-                                    .padding(12.dp)
-                            )
+                                }
+
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.TrendingUp,
+                                    contentDescription = "Trends",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .background(
+                                            MaterialTheme.colorScheme.primaryContainer,
+                                            CircleShape
+                                        )
+                                        .padding(10.dp)
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.height(14.dp))
@@ -405,7 +414,7 @@ fun MainScreen(
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // Saved Date Filter Chips (Presets + User Saved Filters)
+                        // Saved Date Filter Chips (Presets + User Saved Custom / Monthly Cycle Filters)
                         val nowMs = remember { System.currentTimeMillis() }
                         val cal = remember {
                             Calendar.getInstance().apply {
@@ -451,11 +460,19 @@ fun MainScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             allFilters.forEach { filter ->
-                                val isSelected = (state.startDate == filter.startDate && state.endDate == filter.endDate)
+                                val activeDates = remember(filter, state.startDate, state.endDate) {
+                                    if (filter.startDay != null && filter.endDay != null) {
+                                        viewModel.calculateMonthlyCycleDates(filter.startDay, filter.endDay)
+                                    } else {
+                                        Pair(filter.startDate, filter.endDate)
+                                    }
+                                }
+                                val isSelected = (state.startDate == activeDates.first && state.endDate == activeDates.second)
+
                                 FilterChip(
                                     selected = isSelected,
                                     onClick = {
-                                        viewModel.onMainIntent(MainUiIntent.SetDateRange(filter.startDate, filter.endDate))
+                                        viewModel.onMainIntent(MainUiIntent.SetDateRange(activeDates.first, activeDates.second))
                                     },
                                     label = {
                                         Text(
@@ -488,6 +505,21 @@ fun MainScreen(
                             }
 
                             AssistChip(
+                                onClick = { showMonthlyCycleDialog = true },
+                                label = { Text("+ Monthly Cycle", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.DateRange,
+                                        contentDescription = "Add Monthly Cycle Filter",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.testTag("add_monthly_cycle_chip")
+                            )
+
+                            AssistChip(
                                 onClick = { showSaveFilterDialog = true },
                                 label = { Text("Save Active Filter", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                                 leadingIcon = {
@@ -506,9 +538,9 @@ fun MainScreen(
                 }
             }
 
-            // Compact Bar when Hero Header is collapsed
+            // Compact Header Bar when list is expanded to full UI
             AnimatedVisibility(
-                visible = !isHeaderVisible,
+                visible = isListExpanded,
                 enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
                 exit = shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
             ) {
@@ -518,8 +550,7 @@ fun MainScreen(
                         .padding(horizontal = 20.dp, vertical = 6.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f))
-                        .clickable { isHeaderVisible = true }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -541,17 +572,24 @@ fun MainScreen(
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
-                            text = "Expand Summary",
+                            text = "Collapse Full UI",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Expand Summary",
-                            modifier = Modifier.size(18.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        IconButton(
+                            onClick = { isListExpanded = false },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .testTag("collapse_list_ui_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FullscreenExit,
+                                contentDescription = "Collapse Full UI",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }
@@ -857,6 +895,152 @@ fun MainScreen(
             }
         )
     }
+
+    if (showMonthlyCycleDialog) {
+        MonthlyCycleDialog(
+            onDismiss = { showMonthlyCycleDialog = false },
+            onSave = { name, startDay, endDay ->
+                viewModel.saveMonthlyCycleFilter(name, startDay, endDay)
+                val (sDate, eDate) = viewModel.calculateMonthlyCycleDates(startDay, endDay)
+                viewModel.onMainIntent(MainUiIntent.SetDateRange(sDate, eDate))
+            },
+            viewModel = viewModel
+        )
+    }
+}
+
+@Composable
+fun MonthlyCycleDialog(
+    onDismiss: () -> Unit,
+    onSave: (name: String, startDay: Int, endDay: Int) -> Unit,
+    viewModel: ExpenseViewModel
+) {
+    var filterName by remember { mutableStateOf("") }
+    var startDayInput by remember { mutableStateOf("15") }
+    var endDayInput by remember { mutableStateOf("16") }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val startDay = startDayInput.toIntOrNull()
+    val endDay = endDayInput.toIntOrNull()
+
+    val previewDates = remember(startDay, endDay) {
+        if (startDay != null && startDay in 1..31 && endDay != null && endDay in 1..31) {
+            viewModel.calculateMonthlyCycleDates(startDay, endDay)
+        } else null
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("Monthly Cycle Filter", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Set recurring monthly cycle days (e.g. 15th of previous month to 16th of current month).",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = filterName,
+                    onValueChange = { filterName = it },
+                    label = { Text("Filter Name (Optional)") },
+                    placeholder = { Text("e.g. Monthly Cycle (15-16)") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("monthly_cycle_name_input")
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedTextField(
+                        value = startDayInput,
+                        onValueChange = { input ->
+                            if (input.isEmpty() || (input.all { it.isDigit() } && (input.toIntOrNull() ?: 0) <= 31)) {
+                                startDayInput = input
+                            }
+                        },
+                        label = { Text("Start Day (Prev)") },
+                        placeholder = { Text("15") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("monthly_cycle_start_day")
+                    )
+
+                    OutlinedTextField(
+                        value = endDayInput,
+                        onValueChange = { input ->
+                            if (input.isEmpty() || (input.all { it.isDigit() } && (input.toIntOrNull() ?: 0) <= 31)) {
+                                endDayInput = input
+                            }
+                        },
+                        label = { Text("End Day (Current)") },
+                        placeholder = { Text("16") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("monthly_cycle_end_day")
+                    )
+                }
+
+                if (previewDates != null) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text("Current Active Period Preview:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                "${DateFormatter.formatDate(previewDates.first)} – ${DateFormatter.formatDate(previewDates.second)}",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+
+                errorMessage?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val sDay = startDayInput.toIntOrNull()
+                    val eDay = endDayInput.toIntOrNull()
+                    if (sDay == null || sDay !in 1..31) {
+                        errorMessage = "Please enter a valid start day (1 - 31)"
+                    } else if (eDay == null || eDay !in 1..31) {
+                        errorMessage = "Please enter a valid end day (1 - 31)"
+                    } else {
+                        onSave(filterName, sDay, eDay)
+                        onDismiss()
+                    }
+                },
+                modifier = Modifier.testTag("save_monthly_cycle_button")
+            ) {
+                Text("Save Cycle", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
