@@ -46,6 +46,7 @@ fun SettingsScreen(
     var showClearConfirm by remember { mutableStateOf(false) }
     var showRestoreDriveConfirm by remember { mutableStateOf(false) }
     var showImportJsonDialog by remember { mutableStateOf(false) }
+    var showSignInErrorDialog by remember { mutableStateOf<String?>(null) }
     var importJsonText by remember { mutableStateOf("") }
 
     var googleAccount by remember {
@@ -60,6 +61,17 @@ fun SettingsScreen(
             val account = task.getResult(ApiException::class.java)
             googleAccount = account
             Toast.makeText(context, "Signed in as ${account.email}", Toast.LENGTH_SHORT).show()
+        } catch (e: ApiException) {
+            val code = e.statusCode
+            if (code == 10) {
+                showSignInErrorDialog = "Google Sign-In Error (Code 10: DEVELOPER_ERROR)\n\n" +
+                    "Google requires Android apps to register their SHA-1 certificate fingerprint in Google Cloud Console / Firebase.\n\n" +
+                    "• Package Name: com.aistudio.shopexpense.kzpuyb\n" +
+                    "• SHA-1: B8:27:F2:C9:0C:D9:6E:19:70:8F:20:77:7B:D1:1A:09:1E:27:B7:5A\n\n" +
+                    "💡 Quick Alternative: You can use the 'Local JSON Offline Backup' below to instantly export or restore all your expenses without any configuration."
+            } else {
+                showSignInErrorDialog = "Google Sign-In failed with error code $code (${e.localizedMessage ?: "Unknown error"})."
+            }
         } catch (e: Exception) {
             Toast.makeText(context, "Google Sign-In failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
         }
@@ -532,6 +544,43 @@ fun SettingsScreen(
             dismissButton = {
                 OutlinedButton(onClick = { showImportJsonDialog = false }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showSignInErrorDialog != null) {
+        AlertDialog(
+            onDismissRequest = { showSignInErrorDialog = null },
+            title = {
+                Text(
+                    text = "Google Sign-In Notice",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium
+                )
+            },
+            text = {
+                Text(
+                    text = showSignInErrorDialog!!,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("Google Auth Info", "Package: com.aistudio.shopexpense.kzpuyb\nSHA-1: B8:27:F2:C9:0C:D9:6E:19:70:8F:20:77:7B:D1:1A:09:1E:27:B7:5A")
+                        clipboard.setPrimaryClip(clip)
+                        Toast.makeText(context, "App SHA-1 & Package copied to clipboard!", Toast.LENGTH_SHORT).show()
+                        showSignInErrorDialog = null
+                    }
+                ) {
+                    Text("Copy App SHA-1 Details")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showSignInErrorDialog = null }) {
+                    Text("Close")
                 }
             }
         )
