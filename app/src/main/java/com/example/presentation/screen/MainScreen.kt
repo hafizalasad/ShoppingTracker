@@ -1,6 +1,13 @@
 package com.example.presentation.screen
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +38,8 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Search
@@ -65,6 +75,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -73,8 +84,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -105,6 +120,30 @@ fun MainScreen(
     var filterNameInput by remember { mutableStateOf("") }
     var currencyMenuExpanded by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) } // 0 = Expenses, 1 = Insights/Charts
+
+    val listState = rememberLazyListState()
+    var isHeaderVisible by remember { mutableStateOf(true) }
+
+    // Always restore header when user scrolls back to top
+    LaunchedEffect(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) {
+        if (listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0) {
+            isHeaderVisible = true
+        }
+    }
+
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val delta = available.y
+                if (delta < -15f && isHeaderVisible) {
+                    isHeaderVisible = false
+                } else if (delta > 15f && !isHeaderVisible) {
+                    isHeaderVisible = true
+                }
+                return Offset.Zero
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -255,206 +294,263 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
+                .nestedScroll(nestedScrollConnection)
         ) {
-            // Hero Total Spent Display Card
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
-                                MaterialTheme.colorScheme.background
+            // Hero Total Spent Display Card (Collapsible on Scroll)
+            AnimatedVisibility(
+                visible = isHeaderVisible,
+                enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
+                exit = shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
+                                    MaterialTheme.colorScheme.background
+                                )
                             )
                         )
-                    )
-                    .padding(horizontal = 20.dp, vertical = 16.dp)
-            ) {
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = "Total spent in range",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = CurrencyUtils.formatBangladeshiStyle(state.currencySymbol, state.totalSpent),
-                                style = MaterialTheme.typography.displayMedium,
-                                fontWeight = FontWeight.Black,
-                                color = MaterialTheme.colorScheme.primary
+                        .padding(horizontal = 20.dp, vertical = 16.dp)
+                ) {
+                    Column {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Total spent in range",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = CurrencyUtils.formatBangladeshiStyle(state.currencySymbol, state.totalSpent),
+                                    style = MaterialTheme.typography.displayMedium,
+                                    fontWeight = FontWeight.Black,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.TrendingUp,
+                                contentDescription = "Trends",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .background(
+                                        MaterialTheme.colorScheme.primaryContainer,
+                                        CircleShape
+                                    )
+                                    .padding(12.dp)
                             )
                         }
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.TrendingUp,
-                            contentDescription = "Trends",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .background(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    CircleShape
-                                )
-                                .padding(12.dp)
-                        )
-                    }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
 
-                    // Date range selection card
-                    Card(
-                        onClick = { showDatePicker = true },
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("date_filter_card")
-                    ) {
-                        Row(
+                        // Date range selection card
+                        Card(
+                            onClick = { showDatePicker = true },
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surface
+                            ),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                            shape = RoundedCornerShape(16.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                                .testTag("date_filter_card")
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.CalendarMonth,
+                                        contentDescription = "Date Range",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Text(
+                                            text = "Duration filter",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = "${DateFormatter.formatDate(state.startDate)} - ${DateFormatter.formatDate(state.endDate)}",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
                                 Icon(
-                                    imageVector = Icons.Default.CalendarMonth,
-                                    contentDescription = "Date Range",
+                                    imageVector = Icons.Default.FilterList,
+                                    contentDescription = "Filter Icon",
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp)
                                 )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = "Duration filter",
-                                        fontSize = 11.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        text = "${DateFormatter.formatDate(state.startDate)} - ${DateFormatter.formatDate(state.endDate)}",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
                             }
-                            Icon(
-                                imageVector = Icons.Default.FilterList,
-                                contentDescription = "Filter Icon",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Saved Date Filter Chips (Presets + User Saved Filters)
+                        val nowMs = remember { System.currentTimeMillis() }
+                        val cal = remember {
+                            Calendar.getInstance().apply {
+                                set(Calendar.DAY_OF_MONTH, 1)
+                                set(Calendar.HOUR_OF_DAY, 0)
+                                set(Calendar.MINUTE, 0)
+                                set(Calendar.SECOND, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }
+                        }
+                        val startOfMonthMs = cal.timeInMillis
+
+                        val yearCal = remember {
+                            Calendar.getInstance().apply {
+                                set(Calendar.DAY_OF_YEAR, 1)
+                                set(Calendar.HOUR_OF_DAY, 0)
+                                set(Calendar.MINUTE, 0)
+                                set(Calendar.SECOND, 0)
+                                set(Calendar.MILLISECOND, 0)
+                            }
+                        }
+                        val startOfYearMs = yearCal.timeInMillis
+
+                        val last7DaysMs = nowMs - (7L * 24 * 60 * 60 * 1000)
+                        val last30DaysMs = nowMs - (30L * 24 * 60 * 60 * 1000)
+
+                        val presetFilters = remember(startOfMonthMs, startOfYearMs, nowMs) {
+                            listOf(
+                                SavedDateFilter("preset_month", "This Month", startOfMonthMs, nowMs, isCustom = false),
+                                SavedDateFilter("preset_7d", "Last 7 Days", last7DaysMs, nowMs, isCustom = false),
+                                SavedDateFilter("preset_30d", "Last 30 Days", last30DaysMs, nowMs, isCustom = false),
+                                SavedDateFilter("preset_year", "This Year", startOfYearMs, nowMs, isCustom = false)
+                            )
+                        }
+
+                        val allFilters = presetFilters + savedCustomFilters
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            allFilters.forEach { filter ->
+                                val isSelected = (state.startDate == filter.startDate && state.endDate == filter.endDate)
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        viewModel.onMainIntent(MainUiIntent.SetDateRange(filter.startDate, filter.endDate))
+                                    },
+                                    label = {
+                                        Text(
+                                            text = filter.name,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            fontSize = 12.sp
+                                        )
+                                    },
+                                    trailingIcon = {
+                                        if (filter.isCustom) {
+                                            IconButton(
+                                                onClick = { viewModel.deleteSavedDateFilter(filter.id) },
+                                                modifier = Modifier.size(16.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "Remove Saved Filter",
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.testTag("date_filter_chip_${filter.id}")
+                                )
+                            }
+
+                            AssistChip(
+                                onClick = { showSaveFilterDialog = true },
+                                label = { Text("Save Active Filter", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.BookmarkAdd,
+                                        contentDescription = "Save Preset",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.testTag("save_date_filter_chip")
                             )
                         }
                     }
+                }
+            }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Saved Date Filter Chips (Presets + User Saved Filters)
-                    val nowMs = remember { System.currentTimeMillis() }
-                    val cal = remember {
-                        Calendar.getInstance().apply {
-                            set(Calendar.DAY_OF_MONTH, 1)
-                            set(Calendar.HOUR_OF_DAY, 0)
-                            set(Calendar.MINUTE, 0)
-                            set(Calendar.SECOND, 0)
-                            set(Calendar.MILLISECOND, 0)
-                        }
-                    }
-                    val startOfMonthMs = cal.timeInMillis
-
-                    val yearCal = remember {
-                        Calendar.getInstance().apply {
-                            set(Calendar.DAY_OF_YEAR, 1)
-                            set(Calendar.HOUR_OF_DAY, 0)
-                            set(Calendar.MINUTE, 0)
-                            set(Calendar.SECOND, 0)
-                            set(Calendar.MILLISECOND, 0)
-                        }
-                    }
-                    val startOfYearMs = yearCal.timeInMillis
-
-                    val last7DaysMs = nowMs - (7L * 24 * 60 * 60 * 1000)
-                    val last30DaysMs = nowMs - (30L * 24 * 60 * 60 * 1000)
-
-                    val presetFilters = remember(startOfMonthMs, startOfYearMs, nowMs) {
-                        listOf(
-                            SavedDateFilter("preset_month", "This Month", startOfMonthMs, nowMs, isCustom = false),
-                            SavedDateFilter("preset_7d", "Last 7 Days", last7DaysMs, nowMs, isCustom = false),
-                            SavedDateFilter("preset_30d", "Last 30 Days", last30DaysMs, nowMs, isCustom = false),
-                            SavedDateFilter("preset_year", "This Year", startOfYearMs, nowMs, isCustom = false)
+            // Compact Bar when Hero Header is collapsed
+            AnimatedVisibility(
+                visible = !isHeaderVisible,
+                enter = expandVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeIn(),
+                exit = shrinkVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) + fadeOut()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 6.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f))
+                        .clickable { isHeaderVisible = true }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "Total Spent: ",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = CurrencyUtils.formatBangladeshiStyle(state.currencySymbol, state.totalSpent),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
-
-                    val allFilters = presetFilters + savedCustomFilters
-
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        allFilters.forEach { filter ->
-                            val isSelected = (state.startDate == filter.startDate && state.endDate == filter.endDate)
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    viewModel.onMainIntent(MainUiIntent.SetDateRange(filter.startDate, filter.endDate))
-                                },
-                                label = {
-                                    Text(
-                                        text = filter.name,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        fontSize = 12.sp
-                                    )
-                                },
-                                trailingIcon = {
-                                    if (filter.isCustom) {
-                                        IconButton(
-                                            onClick = { viewModel.deleteSavedDateFilter(filter.id) },
-                                            modifier = Modifier.size(16.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Close,
-                                                contentDescription = "Remove Saved Filter",
-                                                modifier = Modifier.size(12.dp)
-                                            )
-                                        }
-                                    }
-                                },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                                ),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.testTag("date_filter_chip_${filter.id}")
-                            )
-                        }
-
-                        AssistChip(
-                            onClick = { showSaveFilterDialog = true },
-                            label = { Text("Save Active Filter", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.BookmarkAdd,
-                                    contentDescription = "Save Preset",
-                                    modifier = Modifier.size(16.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.testTag("save_date_filter_chip")
+                        Text(
+                            text = "Expand Summary",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Expand Summary",
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary
                         )
                     }
                 }
@@ -654,6 +750,7 @@ fun MainScreen(
                                 }
                             } else {
                                 LazyColumn(
+                                    state = listState,
                                     modifier = Modifier.fillMaxSize(),
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
