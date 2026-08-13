@@ -60,6 +60,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedButton
 import com.example.presentation.viewmodel.SavedDateFilter
 import java.util.Calendar
@@ -450,7 +451,11 @@ fun MainScreen(
                             )
                         }
 
-                        val allFilters = presetFilters + savedCustomFilters
+                        val sortedSavedFilters = remember(savedCustomFilters) {
+                            savedCustomFilters.sortedByDescending { it.id.toLongOrNull() ?: 0L }
+                        }
+
+                        val allFilters = sortedSavedFilters + presetFilters
 
                         Row(
                             modifier = Modifier
@@ -462,7 +467,7 @@ fun MainScreen(
                             allFilters.forEach { filter ->
                                 val activeDates = remember(filter, state.startDate, state.endDate) {
                                     if (filter.startDay != null && filter.endDay != null) {
-                                        viewModel.calculateMonthlyCycleDates(filter.startDay, filter.endDay)
+                                        viewModel.calculateMonthlyCycleDates(filter.startDay, filter.endDay, filter.isStartFromPreviousMonth)
                                     } else {
                                         Pair(filter.startDate, filter.endDate)
                                     }
@@ -899,9 +904,9 @@ fun MainScreen(
     if (showMonthlyCycleDialog) {
         MonthlyCycleDialog(
             onDismiss = { showMonthlyCycleDialog = false },
-            onSave = { name, startDay, endDay ->
-                viewModel.saveMonthlyCycleFilter(name, startDay, endDay)
-                val (sDate, eDate) = viewModel.calculateMonthlyCycleDates(startDay, endDay)
+            onSave = { name, startDay, endDay, isStartFromPreviousMonth ->
+                viewModel.saveMonthlyCycleFilter(name, startDay, endDay, isStartFromPreviousMonth)
+                val (sDate, eDate) = viewModel.calculateMonthlyCycleDates(startDay, endDay, isStartFromPreviousMonth)
                 viewModel.onMainIntent(MainUiIntent.SetDateRange(sDate, eDate))
             },
             viewModel = viewModel
@@ -912,20 +917,21 @@ fun MainScreen(
 @Composable
 fun MonthlyCycleDialog(
     onDismiss: () -> Unit,
-    onSave: (name: String, startDay: Int, endDay: Int) -> Unit,
+    onSave: (name: String, startDay: Int, endDay: Int, isStartFromPreviousMonth: Boolean) -> Unit,
     viewModel: ExpenseViewModel
 ) {
     var filterName by remember { mutableStateOf("") }
     var startDayInput by remember { mutableStateOf("15") }
     var endDayInput by remember { mutableStateOf("16") }
+    var isStartFromPreviousMonth by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val startDay = startDayInput.toIntOrNull()
     val endDay = endDayInput.toIntOrNull()
 
-    val previewDates = remember(startDay, endDay) {
+    val previewDates = remember(startDay, endDay, isStartFromPreviousMonth) {
         if (startDay != null && startDay in 1..31 && endDay != null && endDay in 1..31) {
-            viewModel.calculateMonthlyCycleDates(startDay, endDay)
+            viewModel.calculateMonthlyCycleDates(startDay, endDay, isStartFromPreviousMonth)
         } else null
     }
 
@@ -936,7 +942,7 @@ fun MonthlyCycleDialog(
                 Text("Monthly Cycle Filter", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    "Set recurring monthly cycle days (e.g. 15th of previous month to 16th of current month).",
+                    "Set recurring monthly cycle dates for automatic month-to-month tracking.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -948,12 +954,59 @@ fun MonthlyCycleDialog(
                     value = filterName,
                     onValueChange = { filterName = it },
                     label = { Text("Filter Name (Optional)") },
-                    placeholder = { Text("e.g. Monthly Cycle (15-16)") },
+                    placeholder = {
+                        Text(
+                            if (isStartFromPreviousMonth) "e.g. Monthly Cycle ($startDayInput-$endDayInput)"
+                            else "e.g. Monthly Cycle ($startDayInput-$endDayInput Next)"
+                        )
+                    },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("monthly_cycle_name_input")
                 )
+
+                // Checkbox: From day is in previous month
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { isStartFromPreviousMonth = !isStartFromPreviousMonth }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = isStartFromPreviousMonth,
+                            onCheckedChange = { isStartFromPreviousMonth = it },
+                            modifier = Modifier.testTag("monthly_cycle_prev_month_checkbox")
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column {
+                            Text(
+                                text = "From day is in previous month",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (isStartFromPreviousMonth) {
+                                    "Period: Prev Month ($startDayInput) → Current Month ($endDayInput)"
+                                } else {
+                                    "Period: Current Month ($startDayInput) → Future Month ($endDayInput)"
+                                },
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -966,7 +1019,9 @@ fun MonthlyCycleDialog(
                                 startDayInput = input
                             }
                         },
-                        label = { Text("Start Day (Prev)") },
+                        label = {
+                            Text(if (isStartFromPreviousMonth) "From (Prev M.)" else "From (Current M.)")
+                        },
                         placeholder = { Text("15") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
@@ -982,7 +1037,9 @@ fun MonthlyCycleDialog(
                                 endDayInput = input
                             }
                         },
-                        label = { Text("End Day (Current)") },
+                        label = {
+                            Text(if (isStartFromPreviousMonth) "To (Current M.)" else "To (Future M.)")
+                        },
                         placeholder = { Text("16") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         singleLine = true,
@@ -994,12 +1051,19 @@ fun MonthlyCycleDialog(
 
                 if (previewDates != null) {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                        ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
-                            Text("Current Active Period Preview:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                "Active Range Preview:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 "${DateFormatter.formatDate(previewDates.first)} – ${DateFormatter.formatDate(previewDates.second)}",
@@ -1026,7 +1090,7 @@ fun MonthlyCycleDialog(
                     } else if (eDay == null || eDay !in 1..31) {
                         errorMessage = "Please enter a valid end day (1 - 31)"
                     } else {
-                        onSave(filterName, sDay, eDay)
+                        onSave(filterName, sDay, eDay, isStartFromPreviousMonth)
                         onDismiss()
                     }
                 },
