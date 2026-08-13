@@ -60,6 +60,7 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedButton
 import com.example.presentation.viewmodel.SavedDateFilter
@@ -125,6 +126,7 @@ fun MainScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var showSaveFilterDialog by remember { mutableStateOf(false) }
     var showMonthlyCycleDialog by remember { mutableStateOf(false) }
+    var filterToDelete by remember { mutableStateOf<SavedDateFilter?>(null) }
     var filterNameInput by remember { mutableStateOf("") }
     var currencyMenuExpanded by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) } // 0 = Expenses, 1 = Insights/Charts
@@ -489,8 +491,10 @@ fun MainScreen(
                                     trailingIcon = {
                                         if (filter.isCustom) {
                                             IconButton(
-                                                onClick = { viewModel.deleteSavedDateFilter(filter.id) },
-                                                modifier = Modifier.size(16.dp)
+                                                onClick = { filterToDelete = filter },
+                                                modifier = Modifier
+                                                    .size(16.dp)
+                                                    .testTag("delete_filter_${filter.id}")
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.Close,
@@ -910,6 +914,49 @@ fun MainScreen(
                 viewModel.onMainIntent(MainUiIntent.SetDateRange(sDate, eDate))
             },
             viewModel = viewModel
+        )
+    }
+
+    filterToDelete?.let { targetFilter ->
+        AlertDialog(
+            onDismissRequest = { filterToDelete = null },
+            title = {
+                Text(
+                    text = "Delete Saved Filter?",
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to delete \"${targetFilter.name}\"? This custom date filter preset will be permanently removed.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteSavedDateFilter(targetFilter.id)
+                        filterToDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    modifier = Modifier.testTag("confirm_delete_filter_button")
+                ) {
+                    Text("Delete", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { filterToDelete = null },
+                    modifier = Modifier.testTag("cancel_delete_filter_button")
+                ) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 }
