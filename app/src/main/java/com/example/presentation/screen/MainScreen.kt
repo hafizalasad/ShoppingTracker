@@ -106,6 +106,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.core.util.CurrencyUtils
 import com.example.core.util.DateFormatter
+import com.example.presentation.component.CategoryPieChart
 import com.example.presentation.component.DayWiseBarChart
 import com.example.presentation.component.ShopPieChart
 import com.example.presentation.intent.MainUiIntent
@@ -831,6 +832,12 @@ fun MainScreen(
                             } else {
                                 ShopPieChart(
                                     summaries = state.shopSummaries,
+                                    currencySymbol = state.currencySymbol,
+                                    totalSpent = state.totalSpent
+                                )
+
+                                CategoryPieChart(
+                                    summaries = state.categorySummaries,
                                     currencySymbol = state.currencySymbol,
                                     totalSpent = state.totalSpent
                                 )

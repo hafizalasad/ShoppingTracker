@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.core.util.CurrencyUtils
 import com.example.domain.model.Expense
+import com.example.presentation.state.CategoryExpenseSummary
 import com.example.presentation.state.ShopExpenseSummary
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -58,7 +59,11 @@ val ChartColors = listOf(
     Color(0xFFE2B0FF), // Soft Lavender Lilac
     Color(0xFF86E3CE), // Soft Turquoise Aqua
     Color(0xFFD3C5E5), // Soft Plum Slate
-    Color(0xFFFFB3B3)  // Soft Rose Pink
+    Color(0xFFFFB3B3), // Soft Rose Pink
+    Color(0xFF80D8FF), // Soft Sky Blue
+    Color(0xFFFFD180), // Soft Amber Orange
+    Color(0xFFA7FFEB), // Soft Mint Green
+    Color(0xFFCCFF90)  // Soft Lime
 )
 
 @Composable
@@ -351,3 +356,160 @@ fun DayWiseBarChart(
         }
     }
 }
+
+@Composable
+fun CategoryPieChart(
+    summaries: List<CategoryExpenseSummary>,
+    currencySymbol: String,
+    totalSpent: Double,
+    modifier: Modifier = Modifier
+) {
+    val total = if (totalSpent > 0) totalSpent else 1.0
+    val animProgress = remember { Animatable(0f) }
+
+    LaunchedEffect(summaries) {
+        animProgress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 1000)
+        )
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+        ),
+        border = CardDefaults.outlinedCardBorder()
+    ) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Spent Share by Category",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.align(Alignment.Start)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Box(
+                modifier = Modifier.size(180.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    var startAngle = -90f
+                    val strokeWidth = 24.dp.toPx()
+                    val innerRadiusPadding = strokeWidth / 2
+
+                    summaries.forEachIndexed { index, summary ->
+                        val sweepAngle = ((summary.totalAmount / total) * 360f).toFloat()
+                        val color = ChartColors[index % ChartColors.size]
+
+                        drawArc(
+                            color = color,
+                            startAngle = startAngle,
+                            sweepAngle = sweepAngle * animProgress.value,
+                            useCenter = false,
+                            topLeft = Offset(innerRadiusPadding, innerRadiusPadding),
+                            size = Size(
+                                size.width - strokeWidth,
+                                size.height - strokeWidth
+                            ),
+                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                        )
+                        startAngle += sweepAngle
+                    }
+
+                    if (summaries.isEmpty()) {
+                        drawArc(
+                            color = Color.LightGray.copy(alpha = 0.3f),
+                            startAngle = 0f,
+                            sweepAngle = 360f,
+                            useCenter = false,
+                            topLeft = Offset(innerRadiusPadding, innerRadiusPadding),
+                            size = Size(
+                                size.width - strokeWidth,
+                                size.height - strokeWidth
+                            ),
+                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                        )
+                    }
+                }
+
+                // Centered text display
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "Categories",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "${summaries.size} active",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Legend displaying category metrics
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                summaries.forEachIndexed { index, summary ->
+                    val color = ChartColors[index % ChartColors.size]
+                    val percentage = (summary.totalAmount / total) * 100
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(color)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = summary.category,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Row {
+                            Text(
+                                text = String.format(Locale.getDefault(), "%.1f%%", percentage),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(end = 12.dp)
+                            )
+                            Text(
+                                text = CurrencyUtils.formatBangladeshiStyle(currencySymbol, summary.totalAmount),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

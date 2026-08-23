@@ -1,11 +1,14 @@
 package com.example.data.parser
 
+import com.example.domain.model.ProductLineItem
+
 data class ReceiptResult(
     val merchant: String?,
     val amount: Double?,
     val date: Long?,
     val currency: String?,
-    val confidence: Int
+    val confidence: Int,
+    val lineItems: List<ProductLineItem> = emptyList()
 )
 
 /**
@@ -16,7 +19,8 @@ class ReceiptParser(
     private val totalDetector: TotalDetector = TotalDetector(),
     private val dateDetector: DateDetector = DateDetector(),
     private val currencyDetector: CurrencyDetector = CurrencyDetector(),
-    private val confidenceCalculator: ConfidenceCalculator = ConfidenceCalculator()
+    private val confidenceCalculator: ConfidenceCalculator = ConfidenceCalculator(),
+    private val lineItemDetector: LineItemDetector = LineItemDetector()
 ) {
 
     fun parse(rawOcrText: String): ReceiptResult {
@@ -29,10 +33,11 @@ class ReceiptParser(
         val amount = totalDetector.detectTotal(lines)
         val date = dateDetector.detectDate(lines)
         val currency = currencyDetector.detectCurrency(lines)
+        val lineItems = lineItemDetector.detectLineItems(lines)
 
         val confidence = confidenceCalculator.calculateConfidence(
             hasMerchant = merchant != null,
-            hasTotal = amount != null,
+            hasTotal = amount != null || lineItems.isNotEmpty(),
             hasDate = date != null,
             hasCurrency = currency != null
         )
@@ -42,7 +47,8 @@ class ReceiptParser(
             amount = amount,
             date = date,
             currency = currency,
-            confidence = confidence
+            confidence = confidence,
+            lineItems = lineItems
         )
     }
 }

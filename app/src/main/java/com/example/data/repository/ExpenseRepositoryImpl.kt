@@ -43,6 +43,7 @@ class ExpenseRepositoryImpl(
                 merchant = parseResult.merchant,
                 amount = parseResult.amount,
                 date = parseResult.date,
+                lineItems = parseResult.lineItems,
                 confidence = confidence,
                 isConfidenceLow = confidence < 70,
                 scannedOffline = true,

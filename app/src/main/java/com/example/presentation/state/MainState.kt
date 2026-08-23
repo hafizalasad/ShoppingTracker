@@ -9,8 +9,15 @@ data class ShopExpenseSummary(
     val latestDate: Long = 0L
 )
 
+data class CategoryExpenseSummary(
+    val category: String,
+    val totalAmount: Double,
+    val expenseCount: Int
+)
+
 data class MainUiState(
     val shopSummaries: List<ShopExpenseSummary> = emptyList(),
+    val categorySummaries: List<CategoryExpenseSummary> = emptyList(),
     val expensesInRange: List<Expense> = emptyList(),
     val startDate: Long = 0L,
     val endDate: Long = 0L,

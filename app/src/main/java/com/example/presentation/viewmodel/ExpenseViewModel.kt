@@ -16,8 +16,10 @@ import com.example.domain.usecase.ScanReceiptUseCase
 import com.example.presentation.intent.MainUiIntent
 import com.example.presentation.intent.ScanUiIntent
 import com.example.presentation.intent.ShopDetailsUiIntent
+import com.example.presentation.state.CategoryExpenseSummary
 import com.example.presentation.state.MainUiState
 import com.example.presentation.state.ScanUiState
+import com.example.presentation.state.ShopCategorySummary
 import com.example.presentation.state.ShopDetailsUiState
 import com.example.presentation.state.ShopExpenseSummary
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -80,6 +82,39 @@ class ExpenseViewModel @JvmOverloads constructor(
 
     // Supported Currencies
     val supportedCurrencies = listOf("USD", "BDT", "EUR", "GBP", "JPY", "INR", "CAD", "AUD", "SGD")
+
+    val defaultCategories = listOf(
+        "General",
+        "Groceries",
+        "Food & Dining",
+        "Shopping",
+        "Transport",
+        "Utilities",
+        "Healthcare",
+        "Entertainment",
+        "Electronics",
+        "Education",
+        "Travel",
+        "Personal Care"
+    )
+
+    fun getCustomCategories(): List<String> {
+        val set = sharedPrefs.getStringSet("custom_categories_v1", emptySet()) ?: emptySet()
+        return set.toList().sorted()
+    }
+
+    fun addCustomCategory(category: String) {
+        val trimmed = category.trim()
+        if (trimmed.isEmpty()) return
+        val current = sharedPrefs.getStringSet("custom_categories_v1", emptySet())?.toMutableSet() ?: mutableSetOf()
+        current.add(trimmed)
+        sharedPrefs.edit().putStringSet("custom_categories_v1", current).apply()
+    }
+
+    fun getAllCategories(): List<String> {
+        val custom = getCustomCategories()
+        return (defaultCategories + custom).distinct()
+    }
 
     private val _selectedCurrency = MutableStateFlow(sharedPrefs.getString("preferred_currency", "USD") ?: "USD")
     val selectedCurrency: StateFlow<String> = _selectedCurrency.asStateFlow()
@@ -427,8 +462,18 @@ class ExpenseViewModel @JvmOverloads constructor(
             expenses.filter { it.shopName.contains(query, ignoreCase = true) }
         }
 
+        val catSummaries = filteredExpenses.groupBy { it.category.ifBlank { "General" } }
+            .map { (cat, exps) ->
+                CategoryExpenseSummary(
+                    category = cat,
+                    totalAmount = exps.sumOf { it.amount },
+                    expenseCount = exps.size
+                )
+            }.sortedByDescending { it.totalAmount }
+
         MainUiState(
             shopSummaries = filteredSummaries,
+            categorySummaries = catSummaries,
             expensesInRange = filteredExpenses,
             startDate = start,
             endDate = end,
@@ -459,11 +504,14 @@ class ExpenseViewModel @JvmOverloads constructor(
         val shopName = prefs.getString("draft_shop_name", "") ?: ""
         val amount = prefs.getString("draft_amount", "") ?: ""
         val selectedDate = prefs.getLong("draft_selected_date", System.currentTimeMillis())
+        val category = prefs.getString("draft_category", "General") ?: "General"
         return ScanUiState(
             imagePath = imagePath,
             shopName = shopName,
             amount = amount,
             selectedDate = selectedDate,
+            category = category,
+            availableCategories = getAllCategories(),
             isOffline = true
         )
     }
@@ -478,6 +526,7 @@ class ExpenseViewModel @JvmOverloads constructor(
                     putString("draft_shop_name", state.shopName)
                     putString("draft_amount", state.amount)
                     putLong("draft_selected_date", state.selectedDate)
+                    putString("draft_category", state.category)
                     putBoolean("draft_is_offline", true)
                     apply()
                 }
@@ -490,6 +539,8 @@ class ExpenseViewModel @JvmOverloads constructor(
             shopName = "",
             isShopNameLocked = false,
             selectedDate = System.currentTimeMillis(),
+            category = "General",
+            availableCategories = getAllCategories(),
             isManualEntry = isManual
         )
         navigateTo(Screen.ScanReceipt)
@@ -500,6 +551,8 @@ class ExpenseViewModel @JvmOverloads constructor(
             shopName = shopName,
             isShopNameLocked = true,
             selectedDate = System.currentTimeMillis(),
+            category = "General",
+            availableCategories = getAllCategories(),
             isManualEntry = true
         )
         navigateTo(Screen.ScanReceipt)
@@ -534,11 +587,18 @@ class ExpenseViewModel @JvmOverloads constructor(
                     
                     try {
                         val result = scanReceiptUseCase(intent.bitmap)
+                        val totalFromItems = if (result.lineItems.isNotEmpty()) result.lineItems.sumOf { it.amount } else (result.amount ?: 0.0)
+                        val dominantCategory = result.lineItems.groupingBy { it.category }
+                            .eachCount()
+                            .maxByOrNull { it.value }?.key ?: "General"
+
                         _scanUiState.update { current ->
                             current.copy(
                                 shopName = if (current.isShopNameLocked) current.shopName else (result.merchant ?: "Unknown Shop"),
-                                amount = if (result.amount != null) String.format(Locale.US, "%.2f", result.amount) else "0.00",
+                                amount = if (totalFromItems > 0.0) String.format(Locale.US, "%.2f", totalFromItems) else (if (result.amount != null) String.format(Locale.US, "%.2f", result.amount) else "0.00"),
                                 selectedDate = result.date ?: current.selectedDate,
+                                lineItems = result.lineItems,
+                                category = if (dominantCategory.isNotBlank()) dominantCategory else current.category,
                                 confidenceScore = result.confidence,
                                 isConfidenceLow = result.isConfidenceLow,
                                 analysisError = result.error,
@@ -569,11 +629,77 @@ class ExpenseViewModel @JvmOverloads constructor(
             is ScanUiIntent.UpdateNote -> {
                 _scanUiState.update { it.copy(note = intent.note) }
             }
+            is ScanUiIntent.UpdateCategory -> {
+                _scanUiState.update { it.copy(category = intent.category) }
+            }
+            is ScanUiIntent.AddNewCategory -> {
+                val trimmed = intent.category.trim()
+                if (trimmed.isNotBlank()) {
+                    addCustomCategory(trimmed)
+                    _scanUiState.update { 
+                        it.copy(
+                            category = trimmed,
+                            availableCategories = getAllCategories(),
+                            showAddCategoryDialog = false
+                        ) 
+                    }
+                }
+            }
+            is ScanUiIntent.ToggleAddCategoryDialog -> {
+                _scanUiState.update { it.copy(showAddCategoryDialog = intent.show) }
+            }
+            is ScanUiIntent.UpdateProductLineItemCategory -> {
+                _scanUiState.update { current ->
+                    val updatedItems = current.lineItems.map { item ->
+                        if (item.id == intent.itemId) item.copy(category = intent.category) else item
+                    }
+                    val dominant = updatedItems.groupingBy { it.category }
+                        .eachCount()
+                        .maxByOrNull { it.value }?.key ?: current.category
+                    current.copy(
+                        lineItems = updatedItems,
+                        category = dominant
+                    )
+                }
+            }
+            is ScanUiIntent.UpdateProductLineItem -> {
+                _scanUiState.update { current ->
+                    val updatedItems = current.lineItems.map {
+                        if (it.id == intent.updatedItem.id) intent.updatedItem else it
+                    }
+                    val newTotal = updatedItems.sumOf { it.amount }
+                    current.copy(
+                        lineItems = updatedItems,
+                        amount = if (newTotal > 0.0) String.format(Locale.US, "%.2f", newTotal) else current.amount
+                    )
+                }
+            }
+            is ScanUiIntent.AddProductLineItem -> {
+                _scanUiState.update { current ->
+                    val updatedItems = current.lineItems + intent.item
+                    val newTotal = updatedItems.sumOf { it.amount }
+                    current.copy(
+                        lineItems = updatedItems,
+                        amount = if (newTotal > 0.0) String.format(Locale.US, "%.2f", newTotal) else current.amount
+                    )
+                }
+            }
+            is ScanUiIntent.RemoveProductLineItem -> {
+                _scanUiState.update { current ->
+                    val updatedItems = current.lineItems.filter { it.id != intent.itemId }
+                    val newTotal = updatedItems.sumOf { it.amount }
+                    current.copy(
+                        lineItems = updatedItems,
+                        amount = if (newTotal > 0.0) String.format(Locale.US, "%.2f", newTotal) else current.amount
+                    )
+                }
+            }
             is ScanUiIntent.StartManualEntry -> {
                 _scanUiState.update { 
                     it.copy(
                         isManualEntry = intent.isManual, 
                         imagePath = null,
+                        lineItems = emptyList(),
                         selectedDate = System.currentTimeMillis()
                     ) 
                 }
@@ -583,17 +709,26 @@ class ExpenseViewModel @JvmOverloads constructor(
             }
             is ScanUiIntent.SaveExpense -> {
                 val state = _scanUiState.value
-                val amountVal = state.amount.toDoubleOrNull() ?: 0.0
+                val calculatedAmount = if (state.lineItems.isNotEmpty()) {
+                    val sum = state.lineItems.sumOf { it.amount }
+                    if (sum > 0.0) sum else (state.amount.toDoubleOrNull() ?: 0.0)
+                } else {
+                    state.amount.toDoubleOrNull() ?: 0.0
+                }
+
+                val formattedNote = buildExpenseNote(state.note, state.lineItems)
                 val targetShopName = if (state.isShopNameLocked) state.shopName else null
+
                 saveExpense(
                     shopName = state.shopName.ifBlank { "Offline Receipt" },
-                    amount = amountVal,
+                    amount = calculatedAmount,
                     date = state.selectedDate,
                     imagePath = state.imagePath,
                     isPendingAnalysis = false,
-                    note = state.note
+                    note = formattedNote,
+                    category = state.category.ifBlank { "General" }
                 )
-                _scanUiState.value = ScanUiState()
+                _scanUiState.value = ScanUiState(availableCategories = getAllCategories())
                 if (targetShopName != null) {
                     navigateTo(Screen.ShopDetails(targetShopName))
                 } else {
@@ -602,21 +737,40 @@ class ExpenseViewModel @JvmOverloads constructor(
             }
             is ScanUiIntent.ResetScan -> {
                 val state = _scanUiState.value
+                val allCats = getAllCategories()
                 if (state.isShopNameLocked) {
                     _scanUiState.value = ScanUiState(
                         shopName = state.shopName,
                         isShopNameLocked = true,
                         isManualEntry = true,
-                        selectedDate = System.currentTimeMillis()
+                        selectedDate = System.currentTimeMillis(),
+                        category = "General",
+                        availableCategories = allCats
                     )
                 } else {
                     _scanUiState.value = ScanUiState(
                         isManualEntry = state.isManualEntry,
-                        selectedDate = System.currentTimeMillis()
+                        selectedDate = System.currentTimeMillis(),
+                        category = "General",
+                        availableCategories = allCats
                     )
                 }
             }
         }
+    }
+
+    private fun buildExpenseNote(userNote: String, lineItems: List<com.example.domain.model.ProductLineItem>): String {
+        if (lineItems.isEmpty()) return userNote
+        val sb = StringBuilder()
+        if (userNote.isNotBlank()) {
+            sb.append(userNote.trim()).append("\n\n")
+        }
+        sb.append("Products:\n")
+        lineItems.forEach { item ->
+            val priceStr = if (item.amount > 0.0) " (${String.format(Locale.US, "%.2f", item.amount)})" else ""
+            sb.append("• ${item.name}$priceStr [${item.category}]\n")
+        }
+        return sb.toString().trim()
     }
 
     fun handleBackNavigationFromScan() {
@@ -625,20 +779,29 @@ class ExpenseViewModel @JvmOverloads constructor(
         val hasData = state.imagePath != null ||
                 (state.shopName.isNotBlank() && !state.isShopNameLocked) ||
                 state.amount.isNotBlank() ||
+                state.lineItems.isNotEmpty() ||
                 state.note.isNotBlank()
 
         if (hasData) {
-            val amountVal = state.amount.toDoubleOrNull() ?: 0.0
+            val calculatedAmount = if (state.lineItems.isNotEmpty()) {
+                val sum = state.lineItems.sumOf { it.amount }
+                if (sum > 0.0) sum else (state.amount.toDoubleOrNull() ?: 0.0)
+            } else {
+                state.amount.toDoubleOrNull() ?: 0.0
+            }
+            val formattedNote = buildExpenseNote(state.note, state.lineItems)
+
             saveExpense(
                 shopName = state.shopName.ifBlank { "Offline Receipt" },
-                amount = amountVal,
+                amount = calculatedAmount,
                 date = state.selectedDate,
                 imagePath = state.imagePath,
                 isPendingAnalysis = false,
-                note = state.note
+                note = formattedNote,
+                category = state.category.ifBlank { "General" }
             )
         }
-        _scanUiState.value = ScanUiState()
+        _scanUiState.value = ScanUiState(availableCategories = getAllCategories())
         if (targetShopName != null) {
             navigateTo(Screen.ShopDetails(targetShopName))
         } else {
@@ -651,7 +814,20 @@ class ExpenseViewModel @JvmOverloads constructor(
         return expensesInRange
             .map { list ->
                 val filtered = list.filter { it.shopName.trim().lowercase() == shopName.trim().lowercase() }
-                ShopDetailsUiState(shopName = shopName, expenses = filtered)
+                val catSummaries = filtered.groupBy { it.category.ifBlank { "General" } }
+                    .map { (cat, exps) ->
+                        ShopCategorySummary(
+                            category = cat,
+                            totalAmount = exps.sumOf { it.amount },
+                            count = exps.size
+                        )
+                    }.sortedByDescending { it.totalAmount }
+                ShopDetailsUiState(
+                    shopName = shopName,
+                    expenses = filtered,
+                    categorySummaries = catSummaries,
+                    totalSpent = filtered.sumOf { it.amount }
+                )
             }
             .stateIn(
                 scope = viewModelScope,
@@ -680,7 +856,15 @@ class ExpenseViewModel @JvmOverloads constructor(
         }
     }
 
-    fun saveExpense(shopName: String, amount: Double, date: Long, imagePath: String?, isPendingAnalysis: Boolean, note: String) {
+    fun saveExpense(
+        shopName: String,
+        amount: Double,
+        date: Long,
+        imagePath: String?,
+        isPendingAnalysis: Boolean,
+        note: String,
+        category: String = "General"
+    ) {
         viewModelScope.launch {
             saveExpenseUseCase(
                 Expense(
@@ -689,7 +873,8 @@ class ExpenseViewModel @JvmOverloads constructor(
                     date = date,
                     imagePath = imagePath,
                     isPendingAnalysis = isPendingAnalysis,
-                    note = note
+                    note = note,
+                    category = category
                 )
             )
         }

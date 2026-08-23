@@ -59,11 +59,12 @@ class DriveBackupManager(private val context: Context) {
             obj.put("date", expense.date)
             obj.put("imagePath", expense.imagePath ?: "")
             obj.put("note", expense.note ?: "")
+            obj.put("category", expense.category)
             obj.put("isPendingAnalysis", expense.isPendingAnalysis)
             jsonArray.put(obj)
         }
         val wrapper = JSONObject()
-        wrapper.put("version", 1)
+        wrapper.put("version", 2)
         wrapper.put("timestamp", System.currentTimeMillis())
         wrapper.put("expenses", jsonArray)
         wrapper.toString(2)
@@ -84,7 +85,8 @@ class DriveBackupManager(private val context: Context) {
                     date = obj.optLong("date", System.currentTimeMillis()),
                     imagePath = obj.optString("imagePath").takeIf { !it.isNull_or_blank() },
                     isPendingAnalysis = obj.optBoolean("isPendingAnalysis", false),
-                    note = obj.optString("note", "")
+                    note = obj.optString("note", ""),
+                    category = obj.optString("category", "General").ifBlank { "General" }
                 )
                 list.add(expense)
             }

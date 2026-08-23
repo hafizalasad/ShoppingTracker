@@ -4,6 +4,7 @@ data class ReceiptScanResult(
     val merchant: String?,
     val amount: Double?,
     val date: Long?,
+    val lineItems: List<ProductLineItem> = emptyList(),
     val confidence: Int,
     val isConfidenceLow: Boolean,
     val scannedOffline: Boolean,

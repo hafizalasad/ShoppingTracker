@@ -29,11 +29,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -41,9 +44,20 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.ZoomIn
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.LocalOffer
+import com.example.domain.model.ProductLineItem
+import com.example.core.util.CurrencyUtils
+import java.util.Locale
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -62,7 +76,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -92,6 +108,12 @@ fun ScanReceiptScreen(
 ) {
     val context = LocalContext.current
     val state by viewModel.scanUiState.collectAsState()
+    var showAddCategoryDialog by remember { mutableStateOf(false) }
+    var newCategoryInput by remember { mutableStateOf("") }
+    var showAddLineItemDialog by remember { mutableStateOf(false) }
+    var newLineItemName by remember { mutableStateOf("") }
+    var newLineItemAmount by remember { mutableStateOf("") }
+    var newLineItemCategory by remember { mutableStateOf("General") }
 
     BackHandler(enabled = true) {
         viewModel.handleBackNavigationFromScan()
@@ -538,26 +560,374 @@ fun ScanReceiptScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Form Field: Amount
-                    OutlinedTextField(
-                        value = state.amount,
-                        onValueChange = { viewModel.onScanIntent(ScanUiIntent.UpdateAmount(it)) },
-                        label = { Text("Spent Amount (${viewModel.getCurrencySymbol()})") },
-                        leadingIcon = {
+                    if (state.imagePath != null) {
+                        // SCANNED RECEIPT FLOW: Product Line Items with Individual Category Tagging
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.ShoppingCart,
+                                        contentDescription = "Products",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Product Line Items",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (state.lineItems.isNotEmpty()) {
+                                        Text(
+                                            text = " (${state.lineItems.size})",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+
+                                FilledTonalButton(
+                                    onClick = {
+                                        newLineItemName = ""
+                                        newLineItemAmount = ""
+                                        newLineItemCategory = state.category.ifBlank { "General" }
+                                        showAddLineItemDialog = true
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier
+                                        .height(32.dp)
+                                        .testTag("add_product_item_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "Add Product",
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Add Product", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
                             Text(
-                                viewModel.getCurrencySymbol(),
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(start = 12.dp)
+                                text = "Tag each product below with its category. Total amount is calculated automatically.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("amount_input"),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp)
-                    )
+
+                            if (state.lineItems.isNotEmpty()) {
+                                state.lineItems.forEachIndexed { index, item ->
+                                    Card(
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("line_item_${index}")
+                                    ) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(12.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = item.name,
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 14.sp,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    if (item.amount > 0.0) {
+                                                        Text(
+                                                            text = "${viewModel.getCurrencySymbol()}${String.format(Locale.US, "%.2f", item.amount)}",
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 13.sp
+                                                        )
+                                                    }
+                                                }
+
+                                                IconButton(
+                                                    onClick = { viewModel.onScanIntent(ScanUiIntent.RemoveProductLineItem(item.id)) },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Delete,
+                                                        contentDescription = "Remove Item",
+                                                        tint = MaterialTheme.colorScheme.error,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            // Category Tagging Selector for this product
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .horizontalScroll(rememberScrollState()),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                state.availableCategories.forEach { cat ->
+                                                    val isSelected = item.category.equals(cat, ignoreCase = true)
+                                                    FilterChip(
+                                                        selected = isSelected,
+                                                        onClick = {
+                                                            viewModel.onScanIntent(
+                                                                ScanUiIntent.UpdateProductLineItemCategory(item.id, cat)
+                                                            )
+                                                        },
+                                                        label = {
+                                                            Text(
+                                                                text = cat,
+                                                                fontSize = 11.sp,
+                                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                                            )
+                                                        },
+                                                        leadingIcon = if (isSelected) {
+                                                            {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.CheckCircle,
+                                                                    contentDescription = "Tagged",
+                                                                    modifier = Modifier.size(12.dp)
+                                                                )
+                                                            }
+                                                        } else null,
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        colors = FilterChipDefaults.filterChipColors(
+                                                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                                        ),
+                                                        modifier = Modifier.testTag("item_${item.id}_category_$cat")
+                                                    )
+                                                }
+
+                                                // Add new category shortcut button
+                                                TextButton(
+                                                    onClick = { showAddCategoryDialog = true },
+                                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                                    modifier = Modifier.height(28.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Add,
+                                                        contentDescription = "New Category",
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(2.dp))
+                                                    Text("+ New", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                Card(
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = "No individual product lines detected automatically.",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        FilledTonalButton(
+                                            onClick = {
+                                                newLineItemName = ""
+                                                newLineItemAmount = ""
+                                                newLineItemCategory = state.category.ifBlank { "General" }
+                                                showAddLineItemDialog = true
+                                            },
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Add,
+                                                contentDescription = "Add Product",
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Add Product Line Item", fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Total Amount Auto-calculated Display Card
+                            Card(
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("calculated_total_card")
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = "Total Amount",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = "Calculated from receipt & items",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+
+                                    Text(
+                                        text = "${viewModel.getCurrencySymbol()}${state.amount.ifBlank { "0.00" }}",
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        // MANUAL ENTRY FLOW: Direct Amount with Category Tagging
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            // Form Field: Category Selector with Suggestions & Add Button
+                            Column(
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Category,
+                                            contentDescription = "Category Icon",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Category",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = " • ${state.category}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+
+                                    FilledTonalButton(
+                                        onClick = { showAddCategoryDialog = true },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        modifier = Modifier
+                                            .height(32.dp)
+                                            .testTag("add_category_button")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "Add New Category",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("New", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Category Suggestions Horizontal List
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    state.availableCategories.forEach { cat ->
+                                        val isSelected = state.category.equals(cat, ignoreCase = true)
+                                        FilterChip(
+                                            selected = isSelected,
+                                            onClick = { viewModel.onScanIntent(ScanUiIntent.UpdateCategory(cat)) },
+                                            label = { Text(cat, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                                            leadingIcon = if (isSelected) {
+                                                {
+                                                    Icon(
+                                                        imageVector = Icons.Default.CheckCircle,
+                                                        contentDescription = "Selected",
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                }
+                                            } else null,
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                            ),
+                                            modifier = Modifier.testTag("category_chip_$cat")
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Form Field: Amount
+                            OutlinedTextField(
+                                value = state.amount,
+                                onValueChange = { viewModel.onScanIntent(ScanUiIntent.UpdateAmount(it)) },
+                                label = { Text("Spent Amount (${viewModel.getCurrencySymbol()})") },
+                                leadingIcon = {
+                                    Text(
+                                        viewModel.getCurrencySymbol(),
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(start = 12.dp)
+                                    )
+                                },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("amount_input"),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -667,6 +1037,174 @@ fun ScanReceiptScreen(
             onDismiss = { viewModel.onScanIntent(ScanUiIntent.ToggleDatePicker(false)) },
             onDateSelected = { date ->
                 viewModel.onScanIntent(ScanUiIntent.UpdateDate(date))
+            }
+        )
+    }
+
+    if (showAddCategoryDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showAddCategoryDialog = false
+                newCategoryInput = ""
+            },
+            title = { Text("Add New Category", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Enter a name for your custom category:",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = newCategoryInput,
+                        onValueChange = { newCategoryInput = it },
+                        label = { Text("Category Name") },
+                        placeholder = { Text("e.g. Household, Pharmacy") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("new_category_input"),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val trimmed = newCategoryInput.trim()
+                        if (trimmed.isNotBlank()) {
+                            viewModel.onScanIntent(ScanUiIntent.AddNewCategory(trimmed))
+                            newCategoryInput = ""
+                            showAddCategoryDialog = false
+                        }
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("confirm_add_category_button")
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAddCategoryDialog = false
+                        newCategoryInput = ""
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showAddLineItemDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showAddLineItemDialog = false
+                newLineItemName = ""
+                newLineItemAmount = ""
+            },
+            title = { Text("Add Product Line Item", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newLineItemName,
+                        onValueChange = { newLineItemName = it },
+                        label = { Text("Product Name") },
+                        placeholder = { Text("e.g. Organic Milk 1L") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("new_line_item_name_input"),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = newLineItemAmount,
+                        onValueChange = { newLineItemAmount = it },
+                        label = { Text("Price (${viewModel.getCurrencySymbol()})") },
+                        placeholder = { Text("0.00") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("new_line_item_amount_input"),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    Text(
+                        text = "Tag Category:",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        state.availableCategories.forEach { cat ->
+                            val isSelected = newLineItemCategory.equals(cat, ignoreCase = true)
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { newLineItemCategory = cat },
+                                label = { Text(cat, fontSize = 11.sp) },
+                                leadingIcon = if (isSelected) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "Selected",
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    }
+                                } else null,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val name = newLineItemName.trim()
+                        if (name.isNotBlank()) {
+                            val amt = newLineItemAmount.toDoubleOrNull() ?: 0.0
+                            viewModel.onScanIntent(
+                                ScanUiIntent.AddProductLineItem(
+                                    ProductLineItem(
+                                        name = name,
+                                        amount = amt,
+                                        category = newLineItemCategory
+                                    )
+                                )
+                            )
+                            showAddLineItemDialog = false
+                            newLineItemName = ""
+                            newLineItemAmount = ""
+                        }
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("confirm_add_line_item_button")
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAddLineItemDialog = false
+                        newLineItemName = ""
+                        newLineItemAmount = ""
+                    }
+                ) {
+                    Text("Cancel")
+                }
             }
         )
     }
