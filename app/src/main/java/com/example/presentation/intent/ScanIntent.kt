@@ -20,4 +20,5 @@ sealed interface ScanUiIntent {
     data class ToggleDatePicker(val show: Boolean) : ScanUiIntent
     data object SaveExpense : ScanUiIntent
     data object ResetScan : ScanUiIntent
+    data object ParseWithGemini : ScanUiIntent
 }

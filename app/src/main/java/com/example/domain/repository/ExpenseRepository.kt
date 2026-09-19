@@ -12,4 +12,5 @@ interface ExpenseRepository {
     suspend fun deleteExpenseById(id: Long)
     suspend fun getPendingExpenses(): List<Expense>
     suspend fun scanReceipt(bitmap: Bitmap): ReceiptScanResult
+    suspend fun parseReceiptWithAi(rawOcrText: String): List<com.example.domain.model.ProductLineItem>
 }

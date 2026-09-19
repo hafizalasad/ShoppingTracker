@@ -4,8 +4,10 @@ import com.example.domain.model.ProductLineItem
 
 data class ScanUiState(
     val isAnalyzing: Boolean = false,
+    val isAiAnalyzing: Boolean = false,
     val analysisError: String? = null,
     val imagePath: String? = null,
+    val rawOcrText: String? = null,
     val shopName: String = "",
     val amount: String = "",
     val selectedDate: Long = System.currentTimeMillis(),

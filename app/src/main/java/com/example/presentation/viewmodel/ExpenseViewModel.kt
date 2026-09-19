@@ -11,6 +11,7 @@ import com.example.data.repository.ExpenseRepositoryImpl
 import com.example.domain.model.Expense
 import com.example.domain.usecase.DeleteExpenseUseCase
 import com.example.domain.usecase.GetExpensesUseCase
+import com.example.domain.usecase.ParseReceiptWithGeminiUseCase
 import com.example.domain.usecase.SaveExpenseUseCase
 import com.example.domain.usecase.ScanReceiptUseCase
 import com.example.presentation.intent.MainUiIntent
@@ -74,6 +75,9 @@ class ExpenseViewModel @JvmOverloads constructor(
         ExpenseRepositoryImpl(ExpenseDatabase.getDatabase(application).expenseDao())
     ),
     private val scanReceiptUseCase: ScanReceiptUseCase = ScanReceiptUseCase(
+        ExpenseRepositoryImpl(ExpenseDatabase.getDatabase(application).expenseDao())
+    ),
+    private val parseReceiptWithGeminiUseCase: ParseReceiptWithGeminiUseCase = ParseReceiptWithGeminiUseCase(
         ExpenseRepositoryImpl(ExpenseDatabase.getDatabase(application).expenseDao())
     )
 ) : AndroidViewModel(application) {
@@ -603,7 +607,8 @@ class ExpenseViewModel @JvmOverloads constructor(
                                 isConfidenceLow = result.isConfidenceLow,
                                 analysisError = result.error,
                                 scannedOffline = true,
-                                scannedWithAi = false
+                                scannedWithAi = false,
+                                rawOcrText = result.rawOcrText
                             )
                         }
                     } catch (e: Exception) {
@@ -754,6 +759,39 @@ class ExpenseViewModel @JvmOverloads constructor(
                         category = "General",
                         availableCategories = allCats
                     )
+                }
+            }
+            is ScanUiIntent.ParseWithGemini -> {
+                val currentState = _scanUiState.value
+                val ocrText = currentState.rawOcrText
+                if (!ocrText.isNullOrBlank()) {
+                    viewModelScope.launch {
+                        _scanUiState.update { it.copy(isAiAnalyzing = true, analysisError = null) }
+                        try {
+                            val aiItems = parseReceiptWithGeminiUseCase(ocrText)
+                            if (aiItems.isNotEmpty()) {
+                                val totalFromAi = aiItems.sumOf { it.amount }
+                                _scanUiState.update { current ->
+                                    current.copy(
+                                        lineItems = aiItems,
+                                        amount = if (totalFromAi > 0.0) String.format(Locale.US, "%.2f", totalFromAi) else current.amount,
+                                        scannedWithAi = true,
+                                        scannedOffline = false
+                                    )
+                                }
+                            } else {
+                                _scanUiState.update { 
+                                    it.copy(analysisError = "Gemini could not extract line items or returned no products. Keeping existing items.") 
+                                }
+                            }
+                        } catch (e: Exception) {
+                            _scanUiState.update { 
+                                it.copy(analysisError = "Gemini extraction failed: ${e.message}") 
+                            }
+                        } finally {
+                            _scanUiState.update { it.copy(isAiAnalyzing = false) }
+                        }
+                    }
                 }
             }
         }

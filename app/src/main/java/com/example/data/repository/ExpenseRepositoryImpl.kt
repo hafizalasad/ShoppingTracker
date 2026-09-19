@@ -3,8 +3,10 @@ package com.example.data.repository
 import android.graphics.Bitmap
 import com.example.data.datasource.ExpenseDao
 import com.example.data.ocr.OcrEngine
+import com.example.data.parser.GeminiReceiptParser
 import com.example.data.parser.ReceiptParser
 import com.example.domain.model.Expense
+import com.example.domain.model.ProductLineItem
 import com.example.domain.model.ReceiptScanResult
 import com.example.domain.repository.ExpenseRepository
 import kotlinx.coroutines.flow.Flow
@@ -12,7 +14,8 @@ import kotlinx.coroutines.flow.Flow
 class ExpenseRepositoryImpl(
     private val expenseDao: ExpenseDao,
     private val ocrEngine: OcrEngine = OcrEngine(),
-    private val receiptParser: ReceiptParser = ReceiptParser()
+    private val receiptParser: ReceiptParser = ReceiptParser(),
+    private val geminiReceiptParser: GeminiReceiptParser = GeminiReceiptParser()
 ) : ExpenseRepository {
 
     override fun getAllExpenses(): Flow<List<Expense>> = expenseDao.getAllExpenses()
@@ -47,7 +50,8 @@ class ExpenseRepositoryImpl(
                 confidence = confidence,
                 isConfidenceLow = confidence < 70,
                 scannedOffline = true,
-                scannedWithAi = false
+                scannedWithAi = false,
+                rawOcrText = rawText
             )
         } catch (e: Exception) {
             ReceiptScanResult(
@@ -61,5 +65,9 @@ class ExpenseRepositoryImpl(
                 error = "OCR failed: ${e.message}"
             )
         }
+    }
+
+    override suspend fun parseReceiptWithAi(rawOcrText: String): List<ProductLineItem> {
+        return geminiReceiptParser.parseProductsFromOcr(rawOcrText)
     }
 }

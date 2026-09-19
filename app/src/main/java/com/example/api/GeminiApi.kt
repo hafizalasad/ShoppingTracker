@@ -58,6 +58,14 @@ data class ReceiptAnalysisResult(
     val date: String? = null
 )
 
+@JsonClass(generateAdapter = true)
+data class GeminiProductItem(
+    val name: String,
+    val unit_price: Double? = null,
+    val quantity: Double? = null,
+    val line_total: Double? = null
+)
+
 interface GeminiApiService {
     @POST("v1beta/models/gemini-3.5-flash:generateContent")
     suspend fun generateContent(
@@ -156,6 +164,22 @@ object GeminiApiClient {
         } catch (e: Exception) {
             e.printStackTrace()
             null
+        }
+    }
+
+    fun parseProductLineItems(jsonString: String): List<GeminiProductItem> {
+        return try {
+            val cleanJson = jsonString.trim()
+                .removePrefix("```json")
+                .removePrefix("```")
+                .removeSuffix("```")
+                .trim()
+            val listType = com.squareup.moshi.Types.newParameterizedType(List::class.java, GeminiProductItem::class.java)
+            val adapter = moshi.adapter<List<GeminiProductItem>>(listType)
+            adapter.fromJson(cleanJson) ?: emptyList()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
         }
     }
 }

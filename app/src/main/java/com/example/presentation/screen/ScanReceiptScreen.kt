@@ -30,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Category
@@ -450,11 +451,18 @@ fun ScanReceiptScreen(
                     Spacer(modifier = Modifier.height(20.dp))
 
                     // OCR Confidence status banner
-                    if (!state.isManualEntry && state.confidenceScore != null) {
-                        val isLow = state.isConfidenceLow
-                        val cardBgColor = if (isLow) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
-                        else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
-                        val tintColor = if (isLow) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                    if (!state.isManualEntry && (state.confidenceScore != null || state.scannedWithAi)) {
+                        val isLow = state.isConfidenceLow && !state.scannedWithAi
+                        val cardBgColor = when {
+                            state.scannedWithAi -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                            isLow -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+                            else -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f)
+                        }
+                        val tintColor = when {
+                            state.scannedWithAi -> MaterialTheme.colorScheme.secondary
+                            isLow -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.primary
+                        }
 
                         Card(
                             colors = CardDefaults.cardColors(containerColor = cardBgColor),
@@ -469,7 +477,11 @@ fun ScanReceiptScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = if (isLow) Icons.Default.Info else Icons.Default.CheckCircle,
+                                    imageVector = when {
+                                        state.scannedWithAi -> Icons.Default.AutoAwesome
+                                        isLow -> Icons.Default.Info
+                                        else -> Icons.Default.CheckCircle
+                                    },
                                     contentDescription = "Scan Source Indicator",
                                     tint = tintColor,
                                     modifier = Modifier.size(24.dp)
@@ -477,15 +489,21 @@ fun ScanReceiptScreen(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        text = if (isLow) "OCR Confidence is Low (${state.confidenceScore}%)"
-                                        else "Secure Local OCR Succeeded (${state.confidenceScore}%)",
+                                        text = when {
+                                            state.scannedWithAi -> "Parsed with Gemini AI"
+                                            isLow -> "OCR Confidence is Low (${state.confidenceScore}%)"
+                                            else -> "Secure Local OCR Succeeded (${state.confidenceScore}%)"
+                                        },
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = if (isLow) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                     Text(
-                                        text = if (isLow) "Please check the auto-extracted values below carefully. Low confidence may be due to complex layouts, noise, or faded text."
-                                        else "Extracted locally on your device using Google ML Kit Text Recognition. Private and offline.",
+                                        text = when {
+                                            state.scannedWithAi -> "Gemini extracted purchased products, quantities, unit prices, and filtered out non-product totals/taxes."
+                                            isLow -> "Please check the auto-extracted values below carefully. Low confidence may be due to complex layouts, noise, or faded text."
+                                            else -> "Extracted locally on your device using Google ML Kit Text Recognition. Private and offline."
+                                        },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = if (isLow) MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                                     )
@@ -595,33 +613,72 @@ fun ScanReceiptScreen(
                                     }
                                 }
 
-                                FilledTonalButton(
-                                    onClick = {
-                                        newLineItemName = ""
-                                        newLineItemAmount = ""
-                                        newLineItemCategory = state.category.ifBlank { "General" }
-                                        showAddLineItemDialog = true
-                                    },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                    modifier = Modifier
-                                        .height(32.dp)
-                                        .testTag("add_product_item_button")
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Add,
-                                        contentDescription = "Add Product",
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Add Product", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    if (state.rawOcrText != null && !state.isAiAnalyzing) {
+                                        OutlinedButton(
+                                            onClick = { viewModel.onScanIntent(ScanUiIntent.ParseWithGemini) },
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            modifier = Modifier
+                                                .height(32.dp)
+                                                .testTag("gemini_parse_button")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.AutoAwesome,
+                                                contentDescription = "Gemini Parse",
+                                                modifier = Modifier.size(14.dp),
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("AI Extract", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    } else if (state.isAiAnalyzing) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(end = 4.dp)
+                                        ) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(16.dp),
+                                                strokeWidth = 2.dp,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("Gemini parsing...", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                                        }
+                                    }
+
+                                    FilledTonalButton(
+                                        onClick = {
+                                            newLineItemName = ""
+                                            newLineItemAmount = ""
+                                            newLineItemCategory = state.category.ifBlank { "General" }
+                                            showAddLineItemDialog = true
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        modifier = Modifier
+                                            .height(32.dp)
+                                            .testTag("add_product_item_button")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "Add Product",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Add Product", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
 
                             Text(
-                                text = "Tag each product below with its category. Total amount is calculated automatically.",
+                                text = if (state.scannedWithAi) "✨ Items parsed with Gemini AI. Verify prices, quantities, and tag each category below." 
+                                       else "Tag each product below with its category. Total amount is calculated automatically.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (state.scannedWithAi) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
 
                             if (state.lineItems.isNotEmpty()) {
@@ -654,8 +711,11 @@ fun ScanReceiptScreen(
                                                         color = MaterialTheme.colorScheme.onSurface
                                                     )
                                                     if (item.amount > 0.0) {
+                                                        val priceBreakdown = if (item.quantity > 1.0 && item.unitPrice > 0.0) {
+                                                            " (${String.format(Locale.US, "%.1f", item.quantity)} @ ${viewModel.getCurrencySymbol()}${String.format(Locale.US, "%.2f", item.unitPrice)})"
+                                                        } else ""
                                                         Text(
-                                                            text = "${viewModel.getCurrencySymbol()}${String.format(Locale.US, "%.2f", item.amount)}",
+                                                            text = "${viewModel.getCurrencySymbol()}${String.format(Locale.US, "%.2f", item.amount)}$priceBreakdown",
                                                             color = MaterialTheme.colorScheme.primary,
                                                             fontWeight = FontWeight.Bold,
                                                             fontSize = 13.sp

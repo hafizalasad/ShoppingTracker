@@ -9,5 +9,6 @@ data class ReceiptScanResult(
     val isConfidenceLow: Boolean,
     val scannedOffline: Boolean,
     val scannedWithAi: Boolean,
-    val error: String? = null
+    val error: String? = null,
+    val rawOcrText: String? = null
 )
